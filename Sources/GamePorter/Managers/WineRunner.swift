@@ -9,11 +9,24 @@ struct WineRunner {
         var env = ProcessInfo.processInfo.environment
         env["WINEPREFIX"] = bottle.url.path
         env["WINEDEBUG"] = "fixme-all"
+        // CrossOver-style defaults for big games: let 32-bit processes use the
+        // full 4GB address space instead of 2GB (matches CrossOver/Whisky).
+        env["WINE_LARGE_ADDRESS_AWARE"] = "1"
         if bottle.esync { env["WINEESYNC"] = "1" }
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
         for (k, v) in bottle.customEnv { env[k] = v }
         return env
+    }
+
+    /// A log left by a wine process that hit Wine's memory-manager assertion —
+    /// typical of heavily-compressed "repack" installers whose decompressor
+    /// exceeds what this Wine build can track. Not fixable via env settings.
+    static func logShowsMemoryCrash(_ log: URL) -> Bool {
+        guard let text = try? String(contentsOf: log, encoding: .utf8) else { return false }
+        return text.contains("alloc_pages_vprot")
+            || text.contains("Assertion failed")
+            || text.contains("NtRaiseException Exception frame is not in stack limits")
     }
 
     @discardableResult
