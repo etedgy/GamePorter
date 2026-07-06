@@ -138,6 +138,9 @@ final class BottleManager: ObservableObject {
             // A wineserver wedged by a prior crash makes new processes fail with
             // mmap errors — start every installer from a clean server.
             try? runner.killAll(bottle: bottle)
+            // Ensure Z: is a network drive so free-space-seeking installers don't
+            // default to the unwritable macOS root (self-heals older bottles).
+            try? runner.configureDrives(bottle: bottle)
             let log = AppPaths.logs.appendingPathComponent("installer-\(bottle.name).log")
             var report: String?
             do {

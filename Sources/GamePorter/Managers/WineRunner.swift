@@ -93,9 +93,21 @@ struct WineRunner {
         try FileManager.default.createDirectory(at: bottle.url, withIntermediateDirectories: true)
         try run(["wineboot", "-i"], bottle: bottle, wait: true, plainGraphics: true)
         try run(["winecfg", "-v", bottle.windowsVersion], bottle: bottle, wait: true, plainGraphics: true)
+        try configureDrives(bottle: bottle)
         if bottle.retinaMode {
             try setRetina(bottle: bottle, enabled: true)
         }
+    }
+
+    /// Mark Z: (Wine's map of the whole macOS filesystem) as a network drive.
+    /// Installers that pick "the drive with the most free space" — FitGirl and
+    /// other repacks especially — otherwise default to Z:\Games, which maps to
+    /// the macOS root "/" and can't be written ("Access denied"). As a network
+    /// drive they skip it and default to C:, which lives inside the bottle.
+    func configureDrives(bottle: Bottle) throws {
+        try run(["reg", "add", #"HKLM\Software\Wine\Drives"#,
+                 "/v", "z:", "/t", "REG_SZ", "/d", "network", "/f"],
+                bottle: bottle, wait: true, plainGraphics: true)
     }
 
     /// Reconcile a prefix to this engine's Wine version. Needed when a bottle
@@ -103,6 +115,7 @@ struct WineRunner {
     /// otherwise the stale prefix crashes (stack overflow / missing dlls).
     func updatePrefix(bottle: Bottle) throws {
         try run(["wineboot", "-u"], bottle: bottle, wait: true, plainGraphics: true)
+        try? configureDrives(bottle: bottle)
     }
 
     func setRetina(bottle: Bottle, enabled: Bool) throws {
