@@ -85,6 +85,76 @@ struct WineRunner {
         "unitycrashhandler64.exe", "unitycrashhandler32.exe", "ueprereqsetup_x64.exe",
     ]
 
+    /// Installed apps, read straight from the prefix's system.reg (no wine process needed).
+    func installedApps(bottle: Bottle) -> [InstalledApp] {
+        let regFile = bottle.url.appendingPathComponent("system.reg")
+        guard let text = try? String(contentsOf: regFile, encoding: .utf8) else { return [] }
+
+        let uninstallPrefixes = [
+            #"Software\Microsoft\Windows\CurrentVersion\Uninstall\"#,
+            #"Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\"#,
+        ]
+        var apps: [String: InstalledApp] = [:]   // dedupe 32/64-bit hives by key
+        var currentKey: String?
+        var fields: [String: String] = [:]
+
+        func flush() {
+            defer { currentKey = nil; fields = [:] }
+            guard let key = currentKey, let name = fields["DisplayName"] else { return }
+            let lower = name.lowercased()
+            // Built-in runtime components, not user apps
+            if lower.contains("wine gecko") || lower.contains("wine mono")
+                || lower.contains("crossover html engine") { return }
+            apps[key] = InstalledApp(
+                key: key, name: name,
+                version: fields["DisplayVersion"],
+                publisher: fields["Publisher"],
+                uninstallString: fields["UninstallString"],
+                quietUninstallString: fields["QuietUninstallString"])
+        }
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            if line.hasPrefix("[") {
+                flush()
+                guard let end = line.firstIndex(of: "]") else { continue }
+                let path = String(line[line.index(after: line.startIndex)..<end])
+                    .replacingOccurrences(of: #"\\"#, with: #"\"#)
+                for p in uninstallPrefixes where path.lowercased().hasPrefix(p.lowercased()) {
+                    let sub = String(path.dropFirst(p.count))
+                    if !sub.isEmpty, !sub.contains("\\") { currentKey = sub }
+                }
+            } else if currentKey != nil, line.hasPrefix("\"") {
+                // "Name"="Value"
+                let parts = String(line.dropFirst()).components(separatedBy: "\"=\"")
+                if parts.count == 2 {
+                    var value = parts[1]
+                    if value.hasSuffix("\"") { value.removeLast() }
+                    fields[parts[0]] = value.replacingOccurrences(of: #"\\"#, with: #"\"#)
+                }
+            }
+        }
+        flush()
+        return apps.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Uninstall an app the same way Add/Remove Programs would.
+    func uninstall(app: InstalledApp, bottle: Bottle) throws {
+        let log = AppPaths.logs.appendingPathComponent("uninstall-\(bottle.name).log")
+        if let quiet = app.quietUninstallString, !quiet.isEmpty {
+            try run(["cmd", "/c", quiet], bottle: bottle, wait: true, log: log)
+        } else if let cmd = app.uninstallString, cmd.lowercased().contains("msiexec"),
+                  app.key.hasPrefix("{") {
+            // Fully silent MSI removal — MSI UI dialogs often fail to render under
+            // Wine and hang invisibly, so never let msiexec show one.
+            try run(["msiexec", "/x\(app.key)", "/qn"], bottle: bottle, wait: true, log: log)
+        } else if let cmd = app.uninstallString, !cmd.isEmpty {
+            try run(["cmd", "/c", cmd], bottle: bottle, wait: true, log: log)
+        } else {
+            try run(["uninstaller", "--remove", app.key], bottle: bottle, wait: true, log: log)
+        }
+    }
+
     func discoverPrograms(bottle: Bottle) -> [DiscoveredProgram] {
         var results: [DiscoveredProgram] = []
         let fm = FileManager.default

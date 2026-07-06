@@ -66,6 +66,17 @@ struct DiscoveredProgram: Identifiable, Hashable {
     var unixPath: String
 }
 
+/// An installed application from the bottle registry's Uninstall keys.
+struct InstalledApp: Identifiable, Hashable {
+    var id: String { key }
+    var key: String              // registry subkey name (often a {GUID})
+    var name: String
+    var version: String?
+    var publisher: String?
+    var uninstallString: String?
+    var quietUninstallString: String?
+}
+
 enum AppPaths {
     static let root = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

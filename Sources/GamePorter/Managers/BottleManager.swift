@@ -126,6 +126,25 @@ final class BottleManager: ObservableObject {
         runner?.discoverPrograms(bottle: bottle) ?? []
     }
 
+    func installedApps(in bottle: Bottle) -> [InstalledApp] {
+        runner?.installedApps(bottle: bottle) ?? []
+    }
+
+    func uninstallApp(_ app: InstalledApp, in bottle: Bottle) {
+        guard let runner else { lastError = "Toolkit not installed."; return }
+        busy[bottle.id] = "Uninstalling \(app.name)…"
+        Task.detached { [bottle] in
+            do { try runner.uninstall(app: app, bottle: bottle) }
+            catch {
+                await MainActor.run { self.lastError = "Uninstall failed: \(error.localizedDescription)" }
+            }
+            await MainActor.run {
+                self.busy[bottle.id] = nil
+                self.objectWillChange.send()
+            }
+        }
+    }
+
     func openDriveC(_ bottle: Bottle) {
         NSWorkspace.shared.open(bottle.driveC)
     }
