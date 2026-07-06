@@ -12,7 +12,10 @@ struct WineRunner {
         return engine.supportedRenderers.contains(want) ? want : engine.defaultRenderer
     }
 
-    func environment(for bottle: Bottle) -> [String: String] {
+    /// - Parameter plainGraphics: skip the game renderer (DXMT/DXVK) DLL overrides.
+    ///   Installers, winecfg and prefix maintenance don't need graphics translation
+    ///   and are more stable without it.
+    func environment(for bottle: Bottle, plainGraphics: Bool = false) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["WINEPREFIX"] = bottle.url.path
         env["WINEDEBUG"] = "fixme-all"
@@ -23,15 +26,17 @@ struct WineRunner {
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
 
-        // Graphics translation layer via DLL overrides.
-        let r = renderer(for: bottle)
-        env["WINEDLLOVERRIDES"] = RendererStager.dllOverrides(for: r)
-        if r == .dxmt, let unixDir = RendererStager.unixLibDir(for: .dxmt) {
-            // DXMT's winemetal.so is a Wine unix library; point the loader at it.
-            env["WINEDLLPATH"] = unixDir.path
-            env["DXMT_METALFX_SPATIAL_SWAPCHAIN"] = "1"   // MetalFX upscaling when available
+        if !plainGraphics {
+            // Graphics translation layer via DLL overrides.
+            let r = renderer(for: bottle)
+            env["WINEDLLOVERRIDES"] = RendererStager.dllOverrides(for: r)
+            if r == .dxmt, let unixDir = RendererStager.unixLibDir(for: .dxmt) {
+                // DXMT's winemetal.so is a Wine unix library; point the loader at it.
+                env["WINEDLLPATH"] = unixDir.path
+                env["DXMT_METALFX_SPATIAL_SWAPCHAIN"] = "1"   // MetalFX upscaling when available
+            }
+            if r == .dxvk, bottle.metalHUD { env["DXVK_HUD"] = "fps" }
         }
-        if r == .dxvk, bottle.metalHUD { env["DXVK_HUD"] = "fps" }
 
         for (k, v) in bottle.customEnv { env[k] = v }
         return env
@@ -49,11 +54,11 @@ struct WineRunner {
 
     @discardableResult
     func run(_ args: [String], bottle: Bottle, wait: Bool = false,
-             log: URL? = nil) throws -> Process {
+             log: URL? = nil, plainGraphics: Bool = false) throws -> Process {
         let p = Process()
         p.executableURL = wineBin
         p.arguments = args
-        p.environment = environment(for: bottle)
+        p.environment = environment(for: bottle, plainGraphics: plainGraphics)
         // drive_c doesn't exist until wineboot has run once
         p.currentDirectoryURL = FileManager.default.fileExists(atPath: bottle.driveC.path)
             ? bottle.driveC : bottle.url
@@ -84,11 +89,18 @@ struct WineRunner {
     /// Create/boot a fresh prefix and set its Windows version.
     func createPrefix(bottle: Bottle) throws {
         try FileManager.default.createDirectory(at: bottle.url, withIntermediateDirectories: true)
-        try run(["wineboot", "-i"], bottle: bottle, wait: true)
-        try run(["winecfg", "-v", bottle.windowsVersion], bottle: bottle, wait: true)
+        try run(["wineboot", "-i"], bottle: bottle, wait: true, plainGraphics: true)
+        try run(["winecfg", "-v", bottle.windowsVersion], bottle: bottle, wait: true, plainGraphics: true)
         if bottle.retinaMode {
             try setRetina(bottle: bottle, enabled: true)
         }
+    }
+
+    /// Reconcile a prefix to this engine's Wine version. Needed when a bottle
+    /// created on one Wine build is switched to a different one (e.g. 7.7 → 11),
+    /// otherwise the stale prefix crashes (stack overflow / missing dlls).
+    func updatePrefix(bottle: Bottle) throws {
+        try run(["wineboot", "-u"], bottle: bottle, wait: true, plainGraphics: true)
     }
 
     func setRetina(bottle: Bottle, enabled: Bool) throws {
