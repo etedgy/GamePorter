@@ -97,7 +97,17 @@ final class BottleManager: ObservableObject {
             b.renderer = engine.defaultRenderer
         }
         b.save()
-        reload()
+        // Reconcile the prefix to the new engine's Wine version (e.g. 7.7 → 11),
+        // otherwise a prefix created on a different Wine crashes.
+        busy[bottle.id] = "Updating bottle for \(engine.name)…"
+        let runner = WineRunner(engine: engine)
+        Task.detached { [b] in
+            try? runner.updatePrefix(bottle: b)
+            await MainActor.run {
+                self.busy[bottle.id] = nil
+                self.reload()
+            }
+        }
     }
 
     func update(_ bottle: Bottle) {
@@ -121,18 +131,21 @@ final class BottleManager: ObservableObject {
     func runInstaller(_ url: URL, in bottle: Bottle) {
         guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         let engineKind = runner.engine.kind
-        let renderer = runner.renderer(for: bottle)
         busy[bottle.id] = "Running installer \(url.lastPathComponent)…"
+        // Installers run with PLAIN graphics: they don't need DXMT/DXVK, and forcing
+        // those overrides onto a 32-bit installer causes mmap failures / stack overflow.
         Task.detached { [bottle] in
-            try? await RendererStager.stage(renderer, into: bottle)
+            // A wineserver wedged by a prior crash makes new processes fail with
+            // mmap errors — start every installer from a clean server.
+            try? runner.killAll(bottle: bottle)
             let log = AppPaths.logs.appendingPathComponent("installer-\(bottle.name).log")
             var report: String?
             do {
                 let proc: Process
                 if url.pathExtension.lowercased() == "msi" {
-                    proc = try runner.run(["msiexec", "/i", url.path], bottle: bottle, wait: true, log: log)
+                    proc = try runner.run(["msiexec", "/i", url.path], bottle: bottle, wait: true, log: log, plainGraphics: true)
                 } else {
-                    proc = try runner.run([url.path], bottle: bottle, wait: true, log: log)
+                    proc = try runner.run([url.path], bottle: bottle, wait: true, log: log, plainGraphics: true)
                 }
                 if WineRunner.logShowsMemoryCrash(log) {
                     let fix = engineKind == .gptk
@@ -157,7 +170,7 @@ final class BottleManager: ObservableObject {
     func runTool(_ tool: String, in bottle: Bottle) {
         guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         Task.detached {
-            do { try runner.run([tool], bottle: bottle) }
+            do { try runner.run([tool], bottle: bottle, plainGraphics: true) }
             catch {
                 await MainActor.run { self.lastError = "\(tool) failed: \(error.localizedDescription)" }
             }
