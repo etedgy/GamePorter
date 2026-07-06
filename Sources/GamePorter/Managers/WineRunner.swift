@@ -1,9 +1,16 @@
 import Foundation
 
-/// Runs wine processes against a bottle with the right D3DMetal environment.
+/// Runs wine processes against a bottle using its chosen engine + renderer.
 struct WineRunner {
-    let wineBin: URL
-    let wineserverBin: URL
+    let engine: Engine
+    var wineBin: URL { engine.wineBin }
+    var wineserverBin: URL { engine.wineserver }
+
+    /// The renderer the bottle asked for, clamped to what this engine supports.
+    func renderer(for bottle: Bottle) -> RendererKind {
+        let want = bottle.renderer ?? engine.defaultRenderer
+        return engine.supportedRenderers.contains(want) ? want : engine.defaultRenderer
+    }
 
     func environment(for bottle: Bottle) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
@@ -15,6 +22,17 @@ struct WineRunner {
         if bottle.esync { env["WINEESYNC"] = "1" }
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
+
+        // Graphics translation layer via DLL overrides.
+        let r = renderer(for: bottle)
+        env["WINEDLLOVERRIDES"] = RendererStager.dllOverrides(for: r)
+        if r == .dxmt, let unixDir = RendererStager.unixLibDir(for: .dxmt) {
+            // DXMT's winemetal.so is a Wine unix library; point the loader at it.
+            env["WINEDLLPATH"] = unixDir.path
+            env["DXMT_METALFX_SPATIAL_SWAPCHAIN"] = "1"   // MetalFX upscaling when available
+        }
+        if r == .dxvk, bottle.metalHUD { env["DXVK_HUD"] = "fps" }
+
         for (k, v) in bottle.customEnv { env[k] = v }
         return env
     }
