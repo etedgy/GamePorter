@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var toolkit: ToolkitManager
+    @EnvironmentObject var engines: EngineManager
     @EnvironmentObject var bottleManager: BottleManager
     @State private var selection: UUID?
     @State private var showNewBottle = false
+    @State private var showEngines = false
 
     var body: some View {
         NavigationSplitView {
@@ -38,16 +39,21 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .toolbar {
                 ToolbarItem {
+                    Button { showEngines = true } label: {
+                        Label("Engines", systemImage: "cpu")
+                    }
+                }
+                ToolbarItem {
                     Button {
                         showNewBottle = true
                     } label: {
                         Label("New Bottle", systemImage: "plus")
                     }
-                    .disabled(toolkit.wineBin == nil)
+                    .disabled(engines.isEmpty)
                 }
             }
         } detail: {
-            if case .installed = toolkit.status {
+            if !engines.isEmpty {
                 if let id = selection,
                    let bottle = bottleManager.bottles.first(where: { $0.id == id }) {
                     BottleDetailView(bottle: bottle)
@@ -60,9 +66,13 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showNewBottle) {
-            NewBottleSheet { name, winVer in
-                bottleManager.createBottle(named: name, windowsVersion: winVer)
+            NewBottleSheet(engines: engines.engines) { name, winVer, engineID, renderer in
+                bottleManager.createBottle(named: name, windowsVersion: winVer,
+                                           engineID: engineID, renderer: renderer)
             }
+        }
+        .sheet(isPresented: $showEngines) {
+            EnginesView().environmentObject(engines)
         }
         .alert("Error", isPresented: Binding(
             get: { bottleManager.lastError != nil },
@@ -98,7 +108,18 @@ struct NewBottleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var windowsVersion = "win10"
-    let onCreate: (String, String) -> Void
+    @State private var engineID: String
+    @State private var renderer: RendererKind
+    let engines: [Engine]
+    let onCreate: (String, String, String, RendererKind) -> Void
+
+    init(engines: [Engine], onCreate: @escaping (String, String, String, RendererKind) -> Void) {
+        self.engines = engines
+        self.onCreate = onCreate
+        let first = engines.first
+        _engineID = State(initialValue: first?.id ?? "")
+        _renderer = State(initialValue: first?.defaultRenderer ?? .wined3d)
+    }
 
     static let versions = [
         ("win10", "Windows 10 (recommended)"),
@@ -106,6 +127,8 @@ struct NewBottleSheet: View {
         ("win7", "Windows 7"),
         ("winxp64", "Windows XP"),
     ]
+
+    var selectedEngine: Engine? { engines.first { $0.id == engineID } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -117,18 +140,37 @@ struct NewBottleSheet: View {
                     Text(v.1).tag(v.0)
                 }
             }
+            Picker("Engine", selection: $engineID) {
+                ForEach(engines) { e in
+                    Text("\(e.name) — \(e.versionNote)").tag(e.id)
+                }
+            }
+            .onChange(of: engineID) { _, _ in
+                if let e = selectedEngine, !e.supportedRenderers.contains(renderer) {
+                    renderer = e.defaultRenderer
+                }
+            }
+            if let e = selectedEngine {
+                Picker("Renderer", selection: $renderer) {
+                    ForEach(e.supportedRenderers) { r in
+                        Text(r.label).tag(r)
+                    }
+                }
+                Text(renderer.blurb)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Create") {
-                    onCreate(name.isEmpty ? "New Bottle" : name, windowsVersion)
+                    onCreate(name.isEmpty ? "New Bottle" : name, windowsVersion, engineID, renderer)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || engineID.isEmpty)
             }
         }
         .padding(24)
-        .frame(width: 380)
+        .frame(width: 460)
     }
 }

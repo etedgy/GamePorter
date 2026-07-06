@@ -17,6 +17,11 @@ struct Bottle: Identifiable, Codable, Hashable {
     // User-pinned programs (absolute unix paths to .exe files inside the prefix or elsewhere)
     var pinned: [PinnedProgram]
 
+    // Engine + graphics renderer. Optional so bottles from older versions still decode
+    // (missing key → nil → resolved to the current default at launch time).
+    var engineID: String?
+    var renderer: RendererKind?
+
     init(name: String) {
         self.id = UUID()
         self.name = name
@@ -82,11 +87,13 @@ enum AppPaths {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("GamePorter")
     static let toolkit = root.appendingPathComponent("Toolkit")
+    static let engines = root.appendingPathComponent("Engines")
+    static let components = root.appendingPathComponent("Components")
     static let bottles = root.appendingPathComponent("Bottles")
     static let logs = root.appendingPathComponent("Logs")
 
     static func ensure() {
-        for dir in [root, toolkit, bottles, logs] {
+        for dir in [root, toolkit, engines, components, bottles, logs] {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
     }

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct BottleDetailView: View {
     @EnvironmentObject var bottleManager: BottleManager
+    @EnvironmentObject var engines: EngineManager
     @State var bottle: Bottle
     @State private var discovered: [DiscoveredProgram] = []
     @State private var installed: [InstalledApp] = []
@@ -23,6 +24,7 @@ struct BottleDetailView: View {
                     }
                 }
                 actionBar
+                engineSection
                 optionsSection
                 pinnedSection
                 installedSection
@@ -100,6 +102,53 @@ struct BottleDetailView: View {
             } label: { Label("Tools", systemImage: "wrench.and.screwdriver") }
         }
         .disabled(isBusy)
+    }
+
+    var currentEngine: Engine? { engines.engine(id: bottle.engineID) }
+
+    var effectiveRenderer: RendererKind {
+        let want = bottle.renderer ?? currentEngine?.defaultRenderer ?? .wined3d
+        if let e = currentEngine, !e.supportedRenderers.contains(want) { return e.defaultRenderer }
+        return want
+    }
+
+    var engineSection: some View {
+        GroupBox("Engine & Graphics") {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Engine", selection: Binding(
+                    get: { bottle.engineID ?? engines.engines.first?.id ?? "" },
+                    set: { newID in
+                        if let e = engines.engines.first(where: { $0.id == newID }) {
+                            bottle.engineID = e.id
+                            if !e.supportedRenderers.contains(effectiveRenderer) {
+                                bottle.renderer = e.defaultRenderer
+                            }
+                            bottleManager.setEngine(e, in: bottle)
+                        }
+                    })) {
+                    ForEach(engines.engines) { e in
+                        Text("\(e.name) — \(e.versionNote)").tag(e.id)
+                    }
+                }
+
+                if let e = currentEngine {
+                    Picker("Renderer", selection: Binding(
+                        get: { effectiveRenderer },
+                        set: { r in
+                            bottle.renderer = r
+                            bottleManager.setRenderer(r, in: bottle)
+                        })) {
+                        ForEach(e.supportedRenderers) { r in
+                            Text(r.label).tag(r)
+                        }
+                    }
+                    Text(effectiveRenderer.blurb)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     var optionsSection: some View {

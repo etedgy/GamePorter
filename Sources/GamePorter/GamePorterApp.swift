@@ -2,16 +2,15 @@ import SwiftUI
 
 @main
 struct GamePorterApp: App {
-    @StateObject private var toolkit: ToolkitManager
+    @StateObject private var engines: EngineManager
     @StateObject private var bottleManager: BottleManager
 
     init() {
         Self.raiseResourceLimits()
         AppPaths.ensure()
-        let tk = ToolkitManager()
-        tk.detect()
-        _toolkit = StateObject(wrappedValue: tk)
-        _bottleManager = StateObject(wrappedValue: BottleManager(toolkit: tk))
+        let em = EngineManager()
+        _engines = StateObject(wrappedValue: em)
+        _bottleManager = StateObject(wrappedValue: BottleManager(engines: em))
     }
 
     /// Raise this process's open-file limit so wine children inherit it.
@@ -32,7 +31,7 @@ struct GamePorterApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(toolkit)
+                .environmentObject(engines)
                 .environmentObject(bottleManager)
                 .frame(minWidth: 820, minHeight: 520)
         }
