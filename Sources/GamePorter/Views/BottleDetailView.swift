@@ -6,9 +6,11 @@ struct BottleDetailView: View {
     @EnvironmentObject var engines: EngineManager
     @State var bottle: Bottle
     @State private var discovered: [DiscoveredProgram] = []
+    @State private var games: [DiscoveredProgram] = []
     @State private var installed: [InstalledApp] = []
     @State private var showRunPicker = false
     @State private var showInstallerPicker = false
+    @State private var showAddGamePicker = false
     @State private var pendingUninstall: InstalledApp?
 
     var isBusy: Bool { bottleManager.busy[bottle.id] != nil }
@@ -24,6 +26,7 @@ struct BottleDetailView: View {
                     }
                 }
                 actionBar
+                gamesSection
                 engineSection
                 optionsSection
                 pinnedSection
@@ -64,6 +67,17 @@ struct BottleDetailView: View {
                 bottleManager.runInstaller(url, in: bottle)
             }
         }
+        .fileImporter(isPresented: $showAddGamePicker,
+                      allowedContentTypes: [.exe, .item]) { result in
+            if case .success(let url) = result {
+                let name = url.deletingPathExtension().lastPathComponent
+                if !bottle.pinned.contains(where: { $0.unixPath == url.path }) {
+                    bottle.pinned.append(PinnedProgram(name: name, unixPath: url.path))
+                    bottleManager.update(bottle)
+                }
+                bottleManager.launch(exe: url.path, in: bottle)   // launch it right away
+            }
+        }
     }
 
     var header: some View {
@@ -87,6 +101,9 @@ struct BottleDetailView: View {
             Button {
                 showInstallerPicker = true
             } label: { Label("Install App…", systemImage: "shippingbox") }
+            Button {
+                showAddGamePicker = true
+            } label: { Label("Add Game…", systemImage: "gamecontroller") }
             Button {
                 bottleManager.installSteam(in: bottle)
             } label: { Label("Install Steam", systemImage: "cloud") }
@@ -306,8 +323,46 @@ struct BottleDetailView: View {
     }
 
     func refreshPrograms() {
+        games = bottleManager.discoverGames(in: bottle)
         discovered = bottleManager.discoverPrograms(in: bottle)
         installed = bottleManager.installedApps(in: bottle)
+    }
+
+    var gamesSection: some View {
+        Group {
+            if !games.isEmpty {
+                GroupBox {
+                    VStack(spacing: 8) {
+                        ForEach(games) { game in
+                            Button {
+                                bottleManager.launch(exe: game.unixPath, in: bottle)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "gamecontroller.fill")
+                                        .font(.title2).foregroundStyle(.white)
+                                        .frame(width: 40, height: 40)
+                                        .background(LinearGradient(colors: [.teal, .indigo],
+                                                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(game.name).font(.headline).foregroundStyle(.primary)
+                                        Text("Play").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.title).foregroundStyle(.teal)
+                                }
+                                .padding(6)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isBusy)
+                        }
+                    }
+                    .padding(6)
+                } label: { Label("Games", systemImage: "gamecontroller") }
+            }
+        }
     }
 }
 
