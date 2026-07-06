@@ -33,8 +33,23 @@ final class BottleManager: ObservableObject {
                                                      options: [.skipsHiddenFiles]) else {
             bottles = []; return
         }
-        bottles = dirs.compactMap { Bottle.load(from: $0) }
-            .sorted { $0.createdAt < $1.createdAt }
+        bottles = dirs.compactMap { dir in
+            if let b = Bottle.load(from: dir) { return b }
+            return Self.recoverBottle(from: dir)   // prefix exists but metadata was lost
+        }
+        .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// A bottle folder that has a Wine prefix (drive_c) but no gameporter.json —
+    /// rebuild default metadata so the bottle (and its games) never disappear.
+    static func recoverBottle(from dir: URL) -> Bottle? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dir.appendingPathComponent("drive_c").path),
+              let id = UUID(uuidString: dir.lastPathComponent) else { return nil }
+        var b = Bottle(name: "Recovered Bottle")
+        b.id = id
+        b.save()
+        return b
     }
 
     func createBottle(named name: String, windowsVersion: String,
@@ -196,6 +211,11 @@ final class BottleManager: ObservableObject {
 
     func discoverPrograms(in bottle: Bottle) -> [DiscoveredProgram] {
         runner(for: bottle)?.discoverPrograms(bottle: bottle) ?? []
+    }
+
+    /// Installed games, from Desktop/Start Menu shortcuts (CrossOver-style launchers).
+    func discoverGames(in bottle: Bottle) -> [DiscoveredProgram] {
+        runner(for: bottle)?.discoverGames(bottle: bottle) ?? []
     }
 
     func installedApps(in bottle: Bottle) -> [InstalledApp] {
