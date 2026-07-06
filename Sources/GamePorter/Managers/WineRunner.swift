@@ -213,23 +213,115 @@ struct WineRunner {
         }
     }
 
+    /// Games installed in this bottle, read from Desktop / Start Menu .lnk shortcuts —
+    /// the same source CrossOver uses to build its launchers. Targeted and fast.
+    func discoverGames(bottle: Bottle) -> [DiscoveredProgram] {
+        let fm = FileManager.default
+        var out: [String: DiscoveredProgram] = [:]
+        for dir in shortcutDirs(bottle: bottle) {
+            guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil,
+                                                          options: [.skipsHiddenFiles]) else { continue }
+            for lnk in items where lnk.pathExtension.lowercased() == "lnk" {
+                let raw = lnk.deletingPathExtension().lastPathComponent
+                if raw.lowercased().contains("uninstall") { continue }
+                guard let target = Self.lnkTarget(lnk), target.lowercased().hasSuffix(".exe") else { continue }
+                let low = target.lowercased()
+                if low.contains("unins") || low.contains("redist") || low.contains("dxsetup")
+                    || low.contains("vcredist") || low.contains("crashreport") { continue }
+                guard let unix = windowsPathToUnix(target, bottle: bottle),
+                      fm.fileExists(atPath: unix) else { continue }
+                out[unix] = DiscoveredProgram(name: Self.prettyName(raw), unixPath: unix)
+            }
+        }
+        return out.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func shortcutDirs(bottle: Bottle) -> [URL] {
+        let fm = FileManager.default
+        var dirs: [URL] = []
+        let usersRoot = bottle.driveC.appendingPathComponent("users")
+        if let users = try? fm.contentsOfDirectory(at: usersRoot, includingPropertiesForKeys: nil) {
+            for u in users {
+                dirs.append(u.appendingPathComponent("Desktop"))
+                dirs.append(u.appendingPathComponent("Start Menu/Programs"))
+                dirs.append(u.appendingPathComponent("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"))
+            }
+        }
+        dirs.append(bottle.driveC.appendingPathComponent("ProgramData/Microsoft/Windows/Start Menu/Programs"))
+        return dirs
+    }
+
+    /// Extract the target path from a Windows .lnk (Shell Link) — LinkInfo LocalBasePath.
+    static func lnkTarget(_ url: URL) -> String? {
+        guard let d = try? Data(contentsOf: url), d.count > 76 else { return nil }
+        func u16(_ o: Int) -> Int { o+1 < d.count ? Int(d[o]) | Int(d[o+1]) << 8 : 0 }
+        func u32(_ o: Int) -> Int {
+            o+3 < d.count ? Int(d[o]) | Int(d[o+1]) << 8 | Int(d[o+2]) << 16 | Int(d[o+3]) << 24 : 0
+        }
+        let flags = u32(20)
+        var off = 76
+        if flags & 0x1 != 0 { off += 2 + u16(off) }          // skip LinkTargetIDList
+        if flags & 0x2 != 0 {                                 // HasLinkInfo
+            let li = off
+            let lbpOff = u32(li + 16)                          // LocalBasePathOffset
+            if lbpOff > 0, li + lbpOff < d.count {
+                let s = li + lbpOff
+                var e = s
+                while e < d.count && d[e] != 0 { e += 1 }
+                if let p = String(bytes: d[s..<e], encoding: .isoLatin1), p.count > 3 { return p }
+            }
+        }
+        return nil
+    }
+
+    /// "C:\Games\x\game.exe" → the unix path inside this bottle.
+    func windowsPathToUnix(_ win: String, bottle: Bottle) -> String? {
+        guard win.count > 3, win[win.index(win.startIndex, offsetBy: 1)] == ":" else { return nil }
+        let drive = String(win.first!).lowercased()
+        let rest = String(win.dropFirst(2)).replacingOccurrences(of: "\\", with: "/")
+        if drive == "c" { return bottle.driveC.path + rest }
+        let dd = bottle.url.appendingPathComponent("dosdevices/\(drive):")
+        if let link = try? FileManager.default.destinationOfSymbolicLink(atPath: dd.path) {
+            let base = link.hasPrefix("/") ? link
+                : bottle.url.appendingPathComponent("dosdevices/\(link)").standardizedFileURL.path
+            return base + rest
+        }
+        return nil
+    }
+
+    /// "TONY HAWKS PRO SKATER 1 PLUS 2 V20231109" → "Tony Hawks Pro Skater 1 Plus 2".
+    static func prettyName(_ raw: String) -> String {
+        var s = raw.replacingOccurrences(of: "_", with: " ")
+        // drop a trailing version token like "V20231109" or "v1.4.0.0"
+        s = s.replacingOccurrences(of: #"\s+[Vv]\d[\d.]*$"#, with: "", options: .regularExpression)
+        let allCaps = s == s.uppercased()
+        guard allCaps else { return s.trimmingCharacters(in: .whitespaces) }
+        return s.split(separator: " ").map { w -> String in
+            let lw = w.lowercased()
+            return lw.prefix(1).uppercased() + lw.dropFirst()
+        }.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+    }
+
     func discoverPrograms(bottle: Bottle) -> [DiscoveredProgram] {
         var results: [DiscoveredProgram] = []
         let fm = FileManager.default
         let roots = [
             bottle.driveC.appendingPathComponent("Program Files"),
             bottle.driveC.appendingPathComponent("Program Files (x86)"),
+            bottle.driveC.appendingPathComponent("Games"),   // scene/repack installs land here
             bottle.driveC.appendingPathComponent("users"),
         ]
         for root in roots {
             guard let e = fm.enumerator(at: root, includingPropertiesForKeys: nil,
                                         options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
             for case let url as URL in e {
-                if e.level > 4 { e.skipDescendants(); continue }
+                // Games nest deep (…/Base/Binaries/Win64/Game.exe) — allow more depth there.
+                if e.level > 7 { e.skipDescendants(); continue }
                 guard url.pathExtension.lowercased() == "exe" else { continue }
                 let name = url.lastPathComponent.lowercased()
                 if Self.junkNames.contains(name) { continue }
                 if url.path.contains("windows/") || url.path.contains("Windows NT") { continue }
+                if url.path.contains("/Engine/") { continue }   // UE engine tools, not the game
                 results.append(DiscoveredProgram(
                     name: url.deletingPathExtension().lastPathComponent,
                     unixPath: url.path))
