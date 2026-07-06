@@ -5,8 +5,10 @@ struct BottleDetailView: View {
     @EnvironmentObject var bottleManager: BottleManager
     @State var bottle: Bottle
     @State private var discovered: [DiscoveredProgram] = []
+    @State private var installed: [InstalledApp] = []
     @State private var showRunPicker = false
     @State private var showInstallerPicker = false
+    @State private var pendingUninstall: InstalledApp?
 
     var isBusy: Bool { bottleManager.busy[bottle.id] != nil }
 
@@ -23,12 +25,31 @@ struct BottleDetailView: View {
                 actionBar
                 optionsSection
                 pinnedSection
+                installedSection
                 discoveredSection
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { refreshPrograms() }
+        .onChange(of: isBusy) { _, busy in
+            if !busy { refreshPrograms() }
+        }
+        .confirmationDialog(
+            "Uninstall \(pendingUninstall?.name ?? "")?",
+            isPresented: Binding(get: { pendingUninstall != nil },
+                                 set: { if !$0 { pendingUninstall = nil } })
+        ) {
+            Button("Uninstall", role: .destructive) {
+                if let app = pendingUninstall {
+                    bottleManager.uninstallApp(app, in: bottle)
+                }
+                pendingUninstall = nil
+            }
+            Button("Cancel", role: .cancel) { pendingUninstall = nil }
+        } message: {
+            Text("Runs the program's own uninstaller inside this bottle. An uninstall wizard may open — follow it if so.")
+        }
         .fileImporter(isPresented: $showRunPicker,
                       allowedContentTypes: [.exe, .item]) { result in
             if case .success(let url) = result {
@@ -72,6 +93,7 @@ struct BottleDetailView: View {
                 Button("Task Manager") { bottleManager.runTool("taskmgr", in: bottle) }
                 Button("Registry Editor") { bottleManager.runTool("regedit", in: bottle) }
                 Button("Command Prompt") { bottleManager.runTool("wineconsole", in: bottle) }
+                Button("Add/Remove Programs") { bottleManager.runTool("uninstaller", in: bottle) }
                 Divider()
                 Button("Open C: Drive in Finder") { bottleManager.openDriveC(bottle) }
                 Button("Kill All Processes", role: .destructive) { bottleManager.killAll(in: bottle) }
@@ -140,6 +162,44 @@ struct BottleDetailView: View {
         }
     }
 
+    var installedSection: some View {
+        Group {
+            if !installed.isEmpty {
+                GroupBox("Installed programs") {
+                    VStack(spacing: 0) {
+                        ForEach(installed) { app in
+                            HStack {
+                                Image(systemName: "shippingbox.fill")
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading) {
+                                    Text(app.name)
+                                    if app.version != nil || app.publisher != nil {
+                                        Text([app.version, app.publisher]
+                                            .compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption2).foregroundStyle(.tertiary)
+                                    }
+                                }
+                                Spacer()
+                                Button {
+                                    pendingUninstall = app
+                                } label: {
+                                    Label("Uninstall", systemImage: "trash")
+                                        .labelStyle(.titleAndIcon)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .tint(.red)
+                                .disabled(isBusy)
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    }
+                    .padding(6)
+                }
+            }
+        }
+    }
+
     var discoveredSection: some View {
         GroupBox {
             VStack(spacing: 0) {
@@ -198,6 +258,7 @@ struct BottleDetailView: View {
 
     func refreshPrograms() {
         discovered = bottleManager.discoverPrograms(in: bottle)
+        installed = bottleManager.installedApps(in: bottle)
     }
 }
 
