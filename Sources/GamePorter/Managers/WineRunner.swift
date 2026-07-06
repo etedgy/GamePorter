@@ -25,6 +25,8 @@ struct WineRunner {
         if bottle.esync { env["WINEESYNC"] = "1" }
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
+        // Engine-specific loader paths (e.g. CrossOver's wineloader/libs).
+        for (k, v) in engine.extraEnv { env[k] = v }
 
         if !plainGraphics {
             // Graphics translation layer via DLL overrides.
