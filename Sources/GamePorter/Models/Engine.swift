@@ -32,10 +32,11 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
 struct Engine: Identifiable, Hashable {
     let id: String            // stable key & folder name, e.g. "wine-staging-11.10"
     let name: String          // display name
-    let wineBin: URL          // path to the wine loader ("wine" or "wine64")
+    let wineBin: URL          // path to the wine loader ("wine", "wine64", or "wineloader")
     let kind: Kind
+    var extraEnv: [String: String] = [:]   // engine-specific env (CrossOver loader paths)
 
-    enum Kind: String { case gptk, vanilla }
+    enum Kind: String { case gptk, vanilla, crossover }
 
     var wineserver: URL { wineBin.deletingLastPathComponent().appendingPathComponent("wineserver") }
     /// …/Resources/wine — lib/external holds D3DMetal on GPTK builds.
@@ -44,15 +45,20 @@ struct Engine: Identifiable, Hashable {
     /// Renderers this engine can drive.
     var supportedRenderers: [RendererKind] {
         switch kind {
-        case .gptk:    return [.d3dmetal, .dxvk, .wined3d]     // old Wine, has Apple D3DMetal
-        case .vanilla: return [.dxmt, .dxvk, .wined3d]         // Wine 11, no D3DMetal, gets DXMT
+        case .gptk:      return [.d3dmetal, .dxvk, .wined3d]   // old Wine, has Apple D3DMetal
+        case .vanilla:   return [.dxmt, .dxvk, .wined3d]       // Wine 11, no D3DMetal, gets DXMT
+        case .crossover: return [.d3dmetal, .dxvk, .wined3d]   // your CrossOver: D3DMetal + proper 32-bit
         }
     }
 
-    var defaultRenderer: RendererKind { kind == .gptk ? .d3dmetal : .dxmt }
+    var defaultRenderer: RendererKind { kind == .vanilla ? .dxmt : .d3dmetal }
 
     var versionNote: String {
-        kind == .gptk ? "older Wine, Apple D3DMetal" : "modern Wine, best installer compatibility"
+        switch kind {
+        case .gptk:      return "older Wine, Apple D3DMetal"
+        case .vanilla:   return "modern Wine, best installer compatibility"
+        case .crossover: return "your installed CrossOver — installs stubborn 32-bit games"
+        }
     }
 }
 
