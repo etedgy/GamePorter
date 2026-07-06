@@ -7,16 +7,23 @@ final class BottleManager: ObservableObject {
     @Published var busy: [UUID: String] = [:]   // bottle id -> current operation label
     @Published var lastError: String?
 
-    let toolkit: ToolkitManager
+    let engines: EngineManager
 
-    init(toolkit: ToolkitManager) {
-        self.toolkit = toolkit
+    init(engines: EngineManager) {
+        self.engines = engines
         reload()
     }
 
-    private var runner: WineRunner? {
-        guard let wine = toolkit.wineBin, let server = toolkit.wineserverBin else { return nil }
-        return WineRunner(wineBin: wine, wineserverBin: server)
+    /// Build a runner for a specific bottle using its chosen engine.
+    private func runner(for bottle: Bottle) -> WineRunner? {
+        guard let engine = engines.engine(id: bottle.engineID) else { return nil }
+        return WineRunner(engine: engine)
+    }
+
+    /// Runner on the default engine (for bottle creation, before an engine is pinned).
+    private func runner(engineID: String?) -> WineRunner? {
+        guard let engine = engines.engine(id: engineID) else { return nil }
+        return WineRunner(engine: engine)
     }
 
     func reload() {
@@ -30,10 +37,13 @@ final class BottleManager: ObservableObject {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    func createBottle(named name: String, windowsVersion: String) {
-        guard let runner else { lastError = "Toolkit not installed."; return }
+    func createBottle(named name: String, windowsVersion: String,
+                      engineID: String?, renderer: RendererKind?) {
+        guard let runner = runner(engineID: engineID) else { lastError = "No engine installed."; return }
         var bottle = Bottle(name: name)
         bottle.windowsVersion = windowsVersion
+        bottle.engineID = engineID ?? engines.engines.first?.id
+        bottle.renderer = renderer
         busy[bottle.id] = "Creating bottle…"
         bottles.append(bottle)
         Task.detached { [bottle] in
@@ -56,8 +66,37 @@ final class BottleManager: ObservableObject {
     }
 
     func deleteBottle(_ bottle: Bottle) {
-        try? runner?.killAll(bottle: bottle)
+        try? runner(for: bottle)?.killAll(bottle: bottle)
         try? FileManager.default.removeItem(at: bottle.url)
+        reload()
+    }
+
+    /// Change a bottle's renderer: stage its component (if any), then persist.
+    func setRenderer(_ renderer: RendererKind, in bottle: Bottle) {
+        var b = bottle
+        b.renderer = renderer
+        busy[bottle.id] = "Setting up \(renderer.rawValue.uppercased())…"
+        Task.detached { [b] in
+            do { try await RendererStager.stage(renderer, into: b) }
+            catch {
+                await MainActor.run { self.lastError = "Renderer setup failed: \(error.localizedDescription)" }
+            }
+            await MainActor.run {
+                b.save()
+                self.busy[bottle.id] = nil
+                self.reload()
+            }
+        }
+    }
+
+    /// Change a bottle's engine, clamping the renderer to one the engine supports.
+    func setEngine(_ engine: Engine, in bottle: Bottle) {
+        var b = bottle
+        b.engineID = engine.id
+        if let r = b.renderer, !engine.supportedRenderers.contains(r) {
+            b.renderer = engine.defaultRenderer
+        }
+        b.save()
         reload()
     }
 
@@ -67,8 +106,10 @@ final class BottleManager: ObservableObject {
     }
 
     func launch(exe: String, arguments: String = "", in bottle: Bottle) {
-        guard let runner else { lastError = "Toolkit not installed."; return }
+        guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
+        let renderer = runner.renderer(for: bottle)
         Task.detached {
+            try? await RendererStager.stage(renderer, into: bottle)   // idempotent, no-op if builtin/cached
             do { try runner.launch(exe: exe, arguments: arguments, bottle: bottle) }
             catch {
                 await MainActor.run { self.lastError = "Launch failed: \(error.localizedDescription)" }
@@ -78,9 +119,12 @@ final class BottleManager: ObservableObject {
 
     /// Run an installer (.exe or .msi) inside the bottle, waiting for it to finish.
     func runInstaller(_ url: URL, in bottle: Bottle) {
-        guard let runner else { lastError = "Toolkit not installed."; return }
+        guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
+        let engineKind = runner.engine.kind
+        let renderer = runner.renderer(for: bottle)
         busy[bottle.id] = "Running installer \(url.lastPathComponent)…"
         Task.detached { [bottle] in
+            try? await RendererStager.stage(renderer, into: bottle)
             let log = AppPaths.logs.appendingPathComponent("installer-\(bottle.name).log")
             var report: String?
             do {
@@ -91,18 +135,10 @@ final class BottleManager: ObservableObject {
                     proc = try runner.run([url.path], bottle: bottle, wait: true, log: log)
                 }
                 if WineRunner.logShowsMemoryCrash(log) {
-                    report = """
-                    The installer for \(url.lastPathComponent) crashed while unpacking.
-
-                    Its log shows a Wine memory-manager assertion (alloc_pages_vprot). \
-                    This happens with heavily-compressed "repack" installers (e.g. FitGirl) \
-                    whose decompressor exceeds what this Wine build can track. It is a Wine \
-                    core limitation, not a GamePorter bug — CrossOver hits the same wall.
-
-                    What works: install an official / non-repack version, or install the game \
-                    on real Windows (you have Parallels) and copy its folder into this bottle's \
-                    C: drive, then Run the game's .exe directly.
-                    """
+                    let fix = engineKind == .gptk
+                        ? "This bottle uses the old Game Porting Toolkit Wine (7.7), whose memory manager can't handle heavily-compressed \"repack\" installers. Switch this bottle's Engine to Wine Staging 11.10 (Engine picker above) — it installs these fine — then run the installer again."
+                        : "The installer hit a Wine memory assertion even on the modern engine. Try an official / non-repack installer, or install on real Windows (Parallels) and copy the game folder into this bottle's C: drive."
+                    report = "The installer for \(url.lastPathComponent) crashed while unpacking (Wine alloc_pages_vprot assertion).\n\n\(fix)"
                 } else if proc.terminationStatus != 0 {
                     report = "The installer for \(url.lastPathComponent) exited with code \(proc.terminationStatus). See Logs/installer-\(bottle.name).log."
                 }
@@ -119,7 +155,7 @@ final class BottleManager: ObservableObject {
     }
 
     func runTool(_ tool: String, in bottle: Bottle) {
-        guard let runner else { lastError = "Toolkit not installed."; return }
+        guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         Task.detached {
             do { try runner.run([tool], bottle: bottle) }
             catch {
@@ -129,29 +165,29 @@ final class BottleManager: ObservableObject {
     }
 
     func killAll(in bottle: Bottle) {
-        guard let runner else { return }
+        guard let runner = runner(for: bottle) else { return }
         Task.detached {
             try? runner.killAll(bottle: bottle)
         }
     }
 
     func setRetina(_ enabled: Bool, in bottle: Bottle) {
-        guard let runner else { return }
+        guard let runner = runner(for: bottle) else { return }
         Task.detached {
             try? runner.setRetina(bottle: bottle, enabled: enabled)
         }
     }
 
     func discoverPrograms(in bottle: Bottle) -> [DiscoveredProgram] {
-        runner?.discoverPrograms(bottle: bottle) ?? []
+        runner(for: bottle)?.discoverPrograms(bottle: bottle) ?? []
     }
 
     func installedApps(in bottle: Bottle) -> [InstalledApp] {
-        runner?.installedApps(bottle: bottle) ?? []
+        runner(for: bottle)?.installedApps(bottle: bottle) ?? []
     }
 
     func uninstallApp(_ app: InstalledApp, in bottle: Bottle) {
-        guard let runner else { lastError = "Toolkit not installed."; return }
+        guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         busy[bottle.id] = "Uninstalling \(app.name)…"
         Task.detached { [bottle] in
             do { try runner.uninstall(app: app, bottle: bottle) }
