@@ -25,6 +25,10 @@ final class EngineManager: ObservableObject {
                                 wineBin: bin, kind: .gptk))
         }
 
+        // The user's installed CrossOver, if present — its wineloader has proper
+        // 32-bit support that installs repack/InnoSetup installers vanilla Wine can't.
+        if let cx = Self.detectCrossOver() { found.append(cx) }
+
         // Everything else lives under Engines/<id>/.
         if let dirs = try? FileManager.default.contentsOfDirectory(
             at: AppPaths.engines, includingPropertiesForKeys: [.isDirectoryKey],
@@ -41,6 +45,22 @@ final class EngineManager: ObservableObject {
             }
         }
         engines = found.sorted { $0.kind == .vanilla && $1.kind == .gptk } // modern first
+    }
+
+    /// Build an Engine from the user's installed CrossOver (drives its wineloader
+    /// binary directly with GamePorter's own prefixes).
+    nonisolated static func detectCrossOver() -> Engine? {
+        let cx = URL(fileURLWithPath: "/Applications/CrossOver.app/Contents/SharedSupport/CrossOver")
+        let loader = cx.appendingPathComponent("bin/wineloader")
+        guard FileManager.default.isExecutableFile(atPath: loader.path) else { return nil }
+        let env = [
+            "WINELOADER": loader.path,
+            "WINESERVER": cx.appendingPathComponent("bin/wineserver").path,
+            "WINEDLLPATH": "\(cx.path)/lib/wine:\(cx.path)/lib64/wine",
+            "DYLD_FALLBACK_LIBRARY_PATH": "\(cx.path)/lib:\(cx.path)/lib64",
+        ]
+        return Engine(id: "crossover", name: "CrossOver (installed)",
+                      wineBin: loader, kind: .crossover, extraEnv: env)
     }
 
     /// Locate the wine loader under a tree: newer Wine ships "wine", GPTK ships "wine64".
