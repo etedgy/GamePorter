@@ -81,18 +81,38 @@ final class BottleManager: ObservableObject {
         guard let runner else { lastError = "Toolkit not installed."; return }
         busy[bottle.id] = "Running installer \(url.lastPathComponent)…"
         Task.detached { [bottle] in
+            let log = AppPaths.logs.appendingPathComponent("installer-\(bottle.name).log")
+            var report: String?
             do {
-                let log = AppPaths.logs.appendingPathComponent("installer-\(bottle.name).log")
+                let proc: Process
                 if url.pathExtension.lowercased() == "msi" {
-                    try runner.run(["msiexec", "/i", url.path], bottle: bottle, wait: true, log: log)
+                    proc = try runner.run(["msiexec", "/i", url.path], bottle: bottle, wait: true, log: log)
                 } else {
-                    try runner.run([url.path], bottle: bottle, wait: true, log: log)
+                    proc = try runner.run([url.path], bottle: bottle, wait: true, log: log)
+                }
+                if WineRunner.logShowsMemoryCrash(log) {
+                    report = """
+                    The installer for \(url.lastPathComponent) crashed while unpacking.
+
+                    Its log shows a Wine memory-manager assertion (alloc_pages_vprot). \
+                    This happens with heavily-compressed "repack" installers (e.g. FitGirl) \
+                    whose decompressor exceeds what this Wine build can track. It is a Wine \
+                    core limitation, not a GamePorter bug — CrossOver hits the same wall.
+
+                    What works: install an official / non-repack version, or install the game \
+                    on real Windows (you have Parallels) and copy its folder into this bottle's \
+                    C: drive, then Run the game's .exe directly.
+                    """
+                } else if proc.terminationStatus != 0 {
+                    report = "The installer for \(url.lastPathComponent) exited with code \(proc.terminationStatus). See Logs/installer-\(bottle.name).log."
                 }
             } catch {
-                await MainActor.run { self.lastError = "Installer failed: \(error.localizedDescription)" }
+                report = "Installer failed: \(error.localizedDescription)"
             }
+            let finalReport = report
             await MainActor.run {
                 self.busy[bottle.id] = nil
+                if let finalReport { self.lastError = finalReport }
                 self.objectWillChange.send()
             }
         }
