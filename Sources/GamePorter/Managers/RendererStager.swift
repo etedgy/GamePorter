@@ -62,6 +62,7 @@ enum RendererStager {
     static func stage(_ renderer: RendererKind, into bottle: Bottle) async throws {
         if renderer == .dxvk {
             if let dxvk = bundledDXVK { try copyDLLs(from: dxvk, into: bottle) }
+            try writeDXVKConf(into: bottle)
             return
         }
         guard let comp = component(for: renderer) else { return }   // builtin, nothing to stage
@@ -74,6 +75,21 @@ enum RendererStager {
             try? FileManager.default.removeItem(at: tmp)
         }
         try copyDLLs(from: cache, into: bottle)
+    }
+
+    /// Write a bottle-level dxvk.conf. `forceSamplerTypeSpecConstants` makes DXVK's
+    /// d3d9 resolve the real sampler type via a spec constant at draw time instead of
+    /// emitting every 2D/3D/cube/shadow variant per texture register — MoltenVK's
+    /// shader translator can't declare all of those and fails pipeline compilation
+    /// ("use of undeclared identifier s0_*Smplr"), which shows as a blank screen.
+    /// Referenced via DXVK_CONFIG_FILE (see WineRunner.environment). Idempotent.
+    static func writeDXVKConf(into bottle: Bottle) throws {
+        let conf = bottle.url.appendingPathComponent("dxvk.conf")
+        let body = """
+        # Managed by GamePorter — DXVK on Apple Silicon (MoltenVK).
+        d3d9.forceSamplerTypeSpecConstants = True
+        """
+        try body.write(to: conf, atomically: true, encoding: .utf8)
     }
 
     /// Map 64-bit DLLs → system32, 32-bit DLLs → syswow64 (Wine's WoW64 layout).

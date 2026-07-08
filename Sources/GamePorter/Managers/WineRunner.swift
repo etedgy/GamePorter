@@ -37,6 +37,13 @@ struct WineRunner {
                 env["WINEDLLPATH"] = unixDir.path
                 env["DXMT_METALFX_SPATIAL_SWAPCHAIN"] = "1"   // MetalFX upscaling when available
             }
+            if r == .dxvk {
+                // Point DXVK at our bottle-level config (written when staging). It carries
+                // the forceSamplerTypeSpecConstants fix so MoltenVK can compile DX9 shaders
+                // that bind several sampler types to one register — without it those games
+                // fail pipeline compilation ("undeclared identifier s0_*Smplr") = blank screen.
+                env["DXVK_CONFIG_FILE"] = bottle.url.appendingPathComponent("dxvk.conf").path
+            }
 
             // Global settings: FPS cap + FPS overlay, applied to every game.
             let g = AppSettings.current
