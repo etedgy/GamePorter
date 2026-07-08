@@ -13,7 +13,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .d3dmetal: return "D3DMetal — DirectX 11/12 → Metal (Apple)"
         case .dxmt:     return "DXMT — DirectX 10/11 → Metal"
-        case .dxvk:     return "DXVK — DirectX 9/10/11 → Vulkan"
+        case .dxvk:     return "DXVK — DirectX 9/10/11 → Vulkan (Metal)"
         case .wined3d:  return "WineD3D — DirectX → OpenGL (compatibility)"
         }
     }
@@ -22,7 +22,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .d3dmetal: return "Best for modern DX11/DX12 games. Apple's own layer."
         case .dxmt:     return "Newer DX10/11 path, often faster than D3DMetal on Apple Silicon."
-        case .dxvk:     return "Great for DX9–11 titles; needed for older games."
+        case .dxvk:     return "DX9–11 → Metal via our patched DXVK. Best for older games; full shaders."
         case .wined3d:  return "Universal fallback when nothing else renders."
         }
     }
