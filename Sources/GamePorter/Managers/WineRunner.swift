@@ -56,14 +56,18 @@ struct WineRunner {
 
     @discardableResult
     func run(_ args: [String], bottle: Bottle, wait: Bool = false,
-             log: URL? = nil, plainGraphics: Bool = false) throws -> Process {
+             log: URL? = nil, plainGraphics: Bool = false, cwd: URL? = nil) throws -> Process {
         let p = Process()
         p.executableURL = wineBin
         p.arguments = args
         p.environment = environment(for: bottle, plainGraphics: plainGraphics)
-        // drive_c doesn't exist until wineboot has run once
-        p.currentDirectoryURL = FileManager.default.fileExists(atPath: bottle.driveC.path)
-            ? bottle.driveC : bottle.url
+        // Explicit working directory (some games need it), else drive_c once it exists.
+        if let cwd, FileManager.default.fileExists(atPath: cwd.path) {
+            p.currentDirectoryURL = cwd
+        } else {
+            p.currentDirectoryURL = FileManager.default.fileExists(atPath: bottle.driveC.path)
+                ? bottle.driveC : bottle.url
+        }
         if let log {
             FileManager.default.createFile(atPath: log.path, contents: nil)
             let handle = try FileHandle(forWritingTo: log)
@@ -79,13 +83,18 @@ struct WineRunner {
     }
 
     /// Launch a Windows program. `start /unix` lets Wine resolve launchers/lnk targets properly.
-    func launch(exe unixPath: String, arguments: String, bottle: Bottle) throws {
-        var args = ["start", "/unix", unixPath]
-        if !arguments.isEmpty {
-            args += arguments.split(separator: " ").map(String.init)
-        }
+    func launch(exe unixPath: String, arguments: String, workingDir: String? = nil, bottle: Bottle) throws {
+        let extra = arguments.isEmpty ? [] : arguments.split(separator: " ").map(String.init)
         let log = AppPaths.logs.appendingPathComponent("\(bottle.name)-\(Int(Date().timeIntervalSince1970)).log")
-        try run(args, bottle: bottle, log: log)
+        if let workingDir {
+            // Run the exe directly from the given folder — wine accepts a unix exe
+            // path, and the game inherits this working directory.
+            try run([unixPath] + extra, bottle: bottle, log: log,
+                    cwd: URL(fileURLWithPath: workingDir))
+        } else {
+            // `start /unix` resolves launchers/.lnk targets from drive_c.
+            try run(["start", "/unix", unixPath] + extra, bottle: bottle, log: log)
+        }
     }
 
     /// Create/boot a fresh prefix and set its Windows version.

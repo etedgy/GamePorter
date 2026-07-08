@@ -207,8 +207,7 @@ struct BottleDetailView: View {
                                 Text(prog.name)
                                 Spacer()
                                 Button {
-                                    bottleManager.launch(exe: prog.unixPath,
-                                                         arguments: prog.arguments, in: bottle)
+                                    bottleManager.launch(pin: prog, in: bottle)
                                 } label: { Image(systemName: "play.circle.fill").font(.title3) }
                                     .buttonStyle(.plain)
                                     .foregroundStyle(.teal)
