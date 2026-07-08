@@ -134,6 +134,10 @@ final class BottleManager: ObservableObject {
         guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         let renderer = runner.renderer(for: bottle)
         Task.detached {
+            // A game that crashed can leave zombie processes holding the prefix,
+            // which wedges the next launch (e.g. stuck on the splash screen).
+            // Clear any leftover instance before starting fresh.
+            try? runner.killAll(bottle: bottle)
             try? await RendererStager.stage(renderer, into: bottle)   // idempotent, no-op if builtin/cached
             do { try runner.launch(exe: exe, arguments: arguments, workingDir: workingDir, bottle: bottle) }
             catch {
