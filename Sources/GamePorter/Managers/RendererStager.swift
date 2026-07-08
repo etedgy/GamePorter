@@ -11,14 +11,17 @@ enum RendererStager {
         let dlls: [String]
     }
 
+    /// Our own patched DXVK (d3d9 enabled, geometryShader/cull-distance made optional
+    /// so Apple Silicon Metal — which lacks them — isn't rejected). Bundled in the app.
+    static var bundledDXVK: URL? {
+        let dir = Bundle.main.resourceURL?.appendingPathComponent("dxvk")
+        return (dir.map { FileManager.default.fileExists(atPath: $0.path) } == true) ? dir : nil
+    }
+
     static func component(for renderer: RendererKind) -> Component? {
         switch renderer {
         case .dxvk:
-            // This macOS build ships only d3d10core + d3d11; dxgi stays Wine's builtin.
-            return Component(
-                id: "dxvk-macos-1.10.3",
-                url: URL(string: "https://github.com/Gcenx/DXVK-macOS/releases/download/v1.10.3-20230507-repack/dxvk-macOS-async-v1.10.3-20230507-repack-builtin.tar.gz")!,
-                dlls: ["d3d10core", "d3d11"])
+            return nil   // handled from the bundled patched build in stage()
         case .dxmt:
             return Component(
                 id: "dxmt-0.80",
@@ -37,7 +40,7 @@ enum RendererStager {
         case .d3dmetal, .wined3d:
             return "d3d9,d3d10core,d3d11,dxgi=b"
         case .dxvk:
-            return "d3d10core,d3d11=n"          // only these are provided; dxgi stays builtin
+            return "d3d9,d3d10core,d3d11,dxgi=n"   // our patched build provides all four
         case .dxmt:
             return "d3d10core,d3d11,dxgi,winemetal=n"
         }
@@ -54,8 +57,13 @@ enum RendererStager {
         return nil
     }
 
-    /// Download the component (cached) and copy its DLLs into the prefix. Idempotent.
+    /// Copy the renderer's DLLs into the prefix. Idempotent. DXVK stages from our
+    /// bundled patched build; DXMT downloads its component on first use.
     static func stage(_ renderer: RendererKind, into bottle: Bottle) async throws {
+        if renderer == .dxvk {
+            if let dxvk = bundledDXVK { try copyDLLs(from: dxvk, into: bottle) }
+            return
+        }
         guard let comp = component(for: renderer) else { return }   // builtin, nothing to stage
         let cache = AppPaths.components.appendingPathComponent(comp.id)
         if !FileManager.default.fileExists(atPath: cache.path) {
