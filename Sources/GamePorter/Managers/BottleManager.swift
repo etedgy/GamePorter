@@ -57,8 +57,10 @@ final class BottleManager: ObservableObject {
         guard let runner = runner(engineID: engineID) else { lastError = "No engine installed."; return }
         var bottle = Bottle(name: name)
         bottle.windowsVersion = windowsVersion
-        bottle.engineID = engineID ?? engines.engines.first?.id
+        bottle.engineID = engineID ?? AppSettings.current.defaultEngineID ?? engines.engines.first?.id
         bottle.renderer = renderer
+        bottle.esync = AppSettings.current.esyncDefault
+        bottle.advertiseAVX = AppSettings.current.advertiseAVXDefault
         busy[bottle.id] = "Creating bottle…"
         bottles.append(bottle)
         Task.detached { [bottle] in
