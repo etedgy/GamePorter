@@ -134,14 +134,39 @@ struct WineRunner {
                 bottle: bottle, wait: true)
     }
 
-    /// Kill everything running in this bottle.
+    /// Kill everything running in this bottle — including crashed/detached zombies
+    /// that no longer respond to the wineserver (they otherwise wedge the next
+    /// launch, e.g. a game stuck on its splash screen).
     func killAll(bottle: Bottle) throws {
+        // 1. Ask the wineserver to shut the prefix down (graceful, escalates to SIGKILL).
         let p = Process()
         p.executableURL = wineserverBin
         p.arguments = ["-k"]
         p.environment = environment(for: bottle)
-        try p.run()
+        try? p.run()
         p.waitUntilExit()
+        // 2. Backstop: SIGKILL anything still bound to THIS prefix. Matching on the
+        //    WINEPREFIX env keeps it scoped to this bottle — other bottles/games untouched.
+        Self.forceKillPrefixProcesses(prefix: bottle.url.path)
+    }
+
+    /// SIGKILL every process whose environment has WINEPREFIX == this prefix.
+    nonisolated static func forceKillPrefixProcesses(prefix: String) {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-Aeww", "-o", "pid=,command="]   // -e includes each process's env
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        guard (try? ps.run()) != nil else { return }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        ps.waitUntilExit()
+        let marker = "WINEPREFIX=\(prefix)"
+        let mine = ProcessInfo.processInfo.processIdentifier
+        for line in (String(data: data, encoding: .utf8) ?? "").split(separator: "\n") {
+            guard line.contains(marker) else { continue }
+            let digits = line.drop(while: { $0 == " " }).prefix(while: { $0.isNumber })
+            if let pid = pid_t(digits), pid != mine { kill(pid, SIGKILL) }
+        }
     }
 
     /// Discover installed .exe programs in the bottle's Program Files.
