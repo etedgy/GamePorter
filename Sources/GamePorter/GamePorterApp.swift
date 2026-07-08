@@ -4,13 +4,16 @@ import SwiftUI
 struct GamePorterApp: App {
     @StateObject private var engines: EngineManager
     @StateObject private var bottleManager: BottleManager
+    @StateObject private var settingsManager: SettingsManager
 
     init() {
         Self.raiseResourceLimits()
         AppPaths.ensure()
+        AppSettings.current = AppSettings.load()
         let em = EngineManager()
         _engines = StateObject(wrappedValue: em)
         _bottleManager = StateObject(wrappedValue: BottleManager(engines: em))
+        _settingsManager = StateObject(wrappedValue: SettingsManager())
     }
 
     /// Raise this process's open-file limit so wine children inherit it.
@@ -33,6 +36,7 @@ struct GamePorterApp: App {
             ContentView()
                 .environmentObject(engines)
                 .environmentObject(bottleManager)
+                .environmentObject(settingsManager)
                 .frame(minWidth: 820, minHeight: 520)
         }
         .windowResizability(.contentSize)

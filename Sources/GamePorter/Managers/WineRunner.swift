@@ -37,7 +37,17 @@ struct WineRunner {
                 env["WINEDLLPATH"] = unixDir.path
                 env["DXMT_METALFX_SPATIAL_SWAPCHAIN"] = "1"   // MetalFX upscaling when available
             }
-            if r == .dxvk, bottle.metalHUD { env["DXVK_HUD"] = "fps" }
+
+            // Global settings: FPS cap + FPS overlay, applied to every game.
+            let g = AppSettings.current
+            if g.fpsCap > 0 {
+                env["DXVK_FRAME_RATE"] = String(g.fpsCap)   // DXVK renderer limiter
+                env["DXMT_FRAME_RATE"] = String(g.fpsCap)   // DXMT renderer limiter
+            }
+            if g.showFPSOverlay || bottle.metalHUD {
+                env["MTL_HUD_ENABLED"] = "1"
+                if r == .dxvk || r == .dxmt { env["DXVK_HUD"] = "fps,frametimes" }
+            }
         }
 
         for (k, v) in bottle.customEnv { env[k] = v }

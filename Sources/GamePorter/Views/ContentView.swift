@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var selection: UUID?
     @State private var showNewBottle = false
     @State private var showEngines = false
+    @State private var showSettings = false
 
     var body: some View {
         NavigationSplitView {
@@ -38,6 +39,11 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .toolbar {
+                ToolbarItem {
+                    Button { showSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
                 ToolbarItem {
                     Button { showEngines = true } label: {
                         Label("Engines", systemImage: "cpu")
@@ -73,6 +79,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showEngines) {
             EnginesView().environmentObject(engines)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .alert("Error", isPresented: Binding(
             get: { bottleManager.lastError != nil },
