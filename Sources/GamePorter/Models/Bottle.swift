@@ -62,6 +62,10 @@ struct PinnedProgram: Identifiable, Codable, Hashable {
     var name: String
     var unixPath: String
     var arguments: String = ""
+    /// Some games must run from a specific folder (e.g. C&C SAGE games load data
+    /// relative to the install root). When set, launch with this as the working
+    /// directory. Optional → old pins decode fine.
+    var workingDir: String? = nil
 }
 
 /// A discovered .exe inside a bottle's drive_c.

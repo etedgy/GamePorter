@@ -130,16 +130,21 @@ final class BottleManager: ObservableObject {
         reload()
     }
 
-    func launch(exe: String, arguments: String = "", in bottle: Bottle) {
+    func launch(exe: String, arguments: String = "", workingDir: String? = nil, in bottle: Bottle) {
         guard let runner = runner(for: bottle) else { lastError = "No engine installed."; return }
         let renderer = runner.renderer(for: bottle)
         Task.detached {
             try? await RendererStager.stage(renderer, into: bottle)   // idempotent, no-op if builtin/cached
-            do { try runner.launch(exe: exe, arguments: arguments, bottle: bottle) }
+            do { try runner.launch(exe: exe, arguments: arguments, workingDir: workingDir, bottle: bottle) }
             catch {
                 await MainActor.run { self.lastError = "Launch failed: \(error.localizedDescription)" }
             }
         }
+    }
+
+    /// Launch a pinned program with its stored arguments + working directory.
+    func launch(pin: PinnedProgram, in bottle: Bottle) {
+        launch(exe: pin.unixPath, arguments: pin.arguments, workingDir: pin.workingDir, in: bottle)
     }
 
     /// Run an installer (.exe or .msi) inside the bottle, waiting for it to finish.
