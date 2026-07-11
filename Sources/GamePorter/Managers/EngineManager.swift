@@ -26,7 +26,7 @@ final class EngineManager: ObservableObject {
         }
 
         // The user's installed CrossOver, if present — its wineloader has proper
-        // 32-bit support that installs repack/InnoSetup installers vanilla Wine can't.
+        // 32-bit support that installs 32-bit InnoSetup installers vanilla Wine can't.
         if let cx = Self.detectCrossOver() { found.append(cx) }
 
         // Everything else lives under Engines/<id>/.

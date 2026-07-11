@@ -178,8 +178,8 @@ final class BottleManager: ObservableObject {
                 }
                 if WineRunner.logShowsMemoryCrash(log) {
                     let fix = engineKind == .gptk
-                        ? "This bottle uses the old Game Porting Toolkit Wine (7.7), whose memory manager can't handle heavily-compressed \"repack\" installers. Switch this bottle's Engine to Wine Staging 11.10 (Engine picker above) — it installs these fine — then run the installer again."
-                        : "The installer hit a Wine memory assertion even on the modern engine. Try an official / non-repack installer, or install on real Windows (Parallels) and copy the game folder into this bottle's C: drive."
+                        ? "This bottle uses the old Game Porting Toolkit Wine (7.7), whose memory manager can't handle heavily-compressed installers. Switch this bottle's Engine to Wine Staging 11.10 (Engine picker above) — it installs these fine — then run the installer again."
+                        : "The installer hit a Wine memory assertion even on the modern engine. Try an official installer, or install on real Windows (Parallels) and copy the game folder into this bottle's C: drive."
                     report = "The installer for \(url.lastPathComponent) crashed while unpacking (Wine alloc_pages_vprot assertion).\n\n\(fix)"
                 } else if proc.terminationStatus != 0 {
                     report = "The installer for \(url.lastPathComponent) exited with code \(proc.terminationStatus). See Logs/installer-\(bottle.name).log."

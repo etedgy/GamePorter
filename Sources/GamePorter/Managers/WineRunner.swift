@@ -62,7 +62,7 @@ struct WineRunner {
     }
 
     /// A log left by a wine process that hit Wine's memory-manager assertion —
-    /// typical of heavily-compressed "repack" installers whose decompressor
+    /// typical of heavily-compressed installers whose decompressor
     /// exceeds what this Wine build can track. Not fixable via env settings.
     static func logShowsMemoryCrash(_ log: URL) -> Bool {
         guard let text = try? String(contentsOf: log, encoding: .utf8) else { return false }
@@ -126,8 +126,8 @@ struct WineRunner {
     }
 
     /// Mark Z: (Wine's map of the whole macOS filesystem) as a network drive.
-    /// Installers that pick "the drive with the most free space" — FitGirl and
-    /// other repacks especially — otherwise default to Z:\Games, which maps to
+    /// Installers that pick "the drive with the most free space" — some
+    /// installers especially — otherwise default to Z:\Games, which maps to
     /// the macOS root "/" and can't be written ("Access denied"). As a network
     /// drive they skip it and default to C:, which lives inside the bottle.
     func configureDrives(bottle: Bottle) throws {
@@ -359,7 +359,7 @@ struct WineRunner {
         let roots = [
             bottle.driveC.appendingPathComponent("Program Files"),
             bottle.driveC.appendingPathComponent("Program Files (x86)"),
-            bottle.driveC.appendingPathComponent("Games"),   // scene/repack installs land here
+            bottle.driveC.appendingPathComponent("Games"),   // game installs land here
             bottle.driveC.appendingPathComponent("users"),
         ]
         for root in roots {

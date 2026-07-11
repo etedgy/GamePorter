@@ -78,7 +78,7 @@ struct EngineCatalogEntry: Identifiable, Hashable {
             kind: .vanilla,
             url: URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.10/wine-staging-11.10-osx64.tar.xz")!,
             sizeMB: 190,
-            summary: "Modern Wine (2026). Installs repack/compressed installers that old Wine can't. Use with DXMT or DXVK."),
+            summary: "Modern Wine (2026). Installs compressed installers that old Wine can't. Use with DXMT or DXVK."),
         EngineCatalogEntry(
             id: "gptk-3.0-3",
             name: "Game Porting Toolkit 3.0-3",
