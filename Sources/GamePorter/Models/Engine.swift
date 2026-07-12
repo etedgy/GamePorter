@@ -5,6 +5,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
     case d3dmetal   // DX11/12 → Metal (Apple's Game Porting Toolkit)
     case dxmt       // DX10/11 → Metal (3Shain/dxmt, needs Wine 10.18+)
     case dxvk       // DX9/10/11 → Vulkan via MoltenVK
+    case vkd3d      // DX12 → Vulkan via MoltenVK (our patched VKD3D-Proton + MoltenVK)
     case wined3d    // DX → OpenGL, Wine's built-in (max compatibility, slower)
 
     var id: String { rawValue }
@@ -14,6 +15,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         case .d3dmetal: return "D3DMetal — DirectX 11/12 → Metal (Apple)"
         case .dxmt:     return "DXMT — DirectX 10/11 → Metal"
         case .dxvk:     return "DXVK — DirectX 9/10/11 → Vulkan (Metal)"
+        case .vkd3d:    return "VKD3D — DirectX 12 → Vulkan (Metal)"
         case .wined3d:  return "WineD3D — DirectX → OpenGL (compatibility)"
         }
     }
@@ -23,6 +25,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         case .d3dmetal: return "Best for modern DX11/DX12 games. Apple's own layer."
         case .dxmt:     return "Newer DX10/11 path, often faster than D3DMetal on Apple Silicon."
         case .dxvk:     return "DX9–11 → Metal via our patched DXVK. Best for older games; full shaders."
+        case .vkd3d:    return "DX12 → Metal via our patched VKD3D-Proton + MoltenVK. For modern DX12 games (needs the WhiskyWine engine)."
         case .wined3d:  return "Universal fallback when nothing else renders."
         }
     }
@@ -46,7 +49,7 @@ struct Engine: Identifiable, Hashable {
     var supportedRenderers: [RendererKind] {
         switch kind {
         case .gptk:      return [.d3dmetal, .dxvk, .wined3d]   // old Wine, has Apple D3DMetal
-        case .vanilla:   return [.dxmt, .dxvk, .wined3d]       // Wine 11, no D3DMetal, gets DXMT
+        case .vanilla:   return [.vkd3d, .dxmt, .dxvk, .wined3d]  // Wine 11 + our MoltenVK: DX12 via VKD3D, plus DXMT/DXVK
         case .crossover: return [.d3dmetal, .dxvk, .wined3d]   // your CrossOver: D3DMetal + proper 32-bit
         }
     }

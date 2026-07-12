@@ -18,9 +18,16 @@ enum RendererStager {
         return (dir.map { FileManager.default.fileExists(atPath: $0.path) } == true) ? dir : nil
     }
 
+    /// Our own patched VKD3D-Proton (d3d12 + d3d12core, built against our patched MoltenVK
+    /// so the MoltenVK-missing device caps are relaxed). 64-bit only. Bundled in the app.
+    static var bundledVKD3D: URL? {
+        let dir = Bundle.main.resourceURL?.appendingPathComponent("vkd3d")
+        return (dir.map { FileManager.default.fileExists(atPath: $0.path) } == true) ? dir : nil
+    }
+
     static func component(for renderer: RendererKind) -> Component? {
         switch renderer {
-        case .dxvk:
+        case .dxvk, .vkd3d:
             return nil   // handled from the bundled patched build in stage()
         case .dxmt:
             return Component(
@@ -41,6 +48,12 @@ enum RendererStager {
             return "d3d9,d3d10core,d3d11,dxgi=b"
         case .dxvk:
             return "d3d9,d3d10core,d3d11,dxgi=n"   // our patched build provides all four
+        case .vkd3d:
+            // VKD3D-Proton's D3D12 reaches DXGI for adapter enumeration and swapchain
+            // creation; Wine's own wined3d-backed dxgi null-derefs on a VKD3D device, so
+            // route DXGI through DXVK's dxgi too — it's co-developed to bridge to VKD3D
+            // via IDXGIVkInterop.
+            return "dxgi,d3d12,d3d12core=n"   // VKD3D-Proton + DXVK's dxgi (DX12 → Vulkan)
         case .dxmt:
             return "d3d10core,d3d11,dxgi,winemetal=n"
         }
@@ -63,6 +76,13 @@ enum RendererStager {
         if renderer == .dxvk {
             if let dxvk = bundledDXVK { try copyDLLs(from: dxvk, into: bottle) }
             try writeDXVKConf(into: bottle)
+            return
+        }
+        if renderer == .vkd3d {
+            if let vkd3d = bundledVKD3D { try copyDLLs(from: vkd3d, into: bottle) }
+            // VKD3D-Proton relies on DXGI for adapter/swapchain and interops with DXVK's
+            // dxgi (not Wine's wined3d-backed one). Stage only dxgi.dll from our DXVK build.
+            if let dxvk = bundledDXVK { try copyNamedDLL("dxgi.dll", from: dxvk, into: bottle) }
             return
         }
         guard let comp = component(for: renderer) else { return }   // builtin, nothing to stage
@@ -90,6 +110,23 @@ enum RendererStager {
         d3d9.forceSamplerTypeSpecConstants = True
         """
         try body.write(to: conf, atomically: true, encoding: .utf8)
+    }
+
+    /// Copy a single named DLL (both 64- and 32-bit variants if present) from a
+    /// component tree, mapping into system32 / syswow64. Used to graft DXVK's dxgi.dll
+    /// alongside VKD3D without pulling in DXVK's d3d9/10/11.
+    private static func copyNamedDLL(_ name: String, from tree: URL, into bottle: Bottle) throws {
+        let fm = FileManager.default
+        guard let e = fm.enumerator(at: tree, includingPropertiesForKeys: nil) else { return }
+        for case let url as URL in e where url.lastPathComponent.lowercased() == name.lowercased() {
+            let p = url.path.lowercased()
+            let is32 = p.contains("x32") || p.contains("i386") || p.contains("win32") || p.contains("x86-")
+            let sub = is32 ? "windows/syswow64" : "windows/system32"
+            let dest = bottle.driveC.appendingPathComponent(sub).appendingPathComponent(url.lastPathComponent)
+            try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+            try fm.copyItem(at: url, to: dest)
+        }
     }
 
     /// Map 64-bit DLLs → system32, 32-bit DLLs → syswow64 (Wine's WoW64 layout).

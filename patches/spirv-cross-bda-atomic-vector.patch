@@ -1,0 +1,58 @@
+diff --git a/spirv_glsl.cpp b/spirv_glsl.cpp
+index fd7180cd..0ae73540 100644
+--- a/spirv_glsl.cpp
++++ b/spirv_glsl.cpp
+@@ -20625,6 +20625,12 @@ StorageClass CompilerGLSL::get_expression_effective_storage_class(uint32_t ptr)
+ {
+ 	auto *var = maybe_get_backing_variable(ptr);
+ 
++	// A buffer_device_address (PhysicalStorageBuffer) pointer always references device memory,
++	// regardless of where the pointer value itself lives (e.g. loaded from a push constant or UBO).
++	// Report device storage so scalar-access workarounds (atomics on vector components) cast correctly.
++	if (is_pointer(expression_type(ptr)) && expression_type(ptr).storage == StorageClassPhysicalStorageBuffer)
++		return StorageClassPhysicalStorageBuffer;
++
+ 	// If the expression has been lowered to a temporary, we need to use the Generic storage class.
+ 	// We're looking for the effective storage class of a given expression.
+ 	// An access chain or forwarded OpLoads from such access chains
+diff --git a/spirv_msl.cpp b/spirv_msl.cpp
+index c5a9d433..c36277cb 100644
+--- a/spirv_msl.cpp
++++ b/spirv_msl.cpp
+@@ -9347,7 +9347,8 @@ bool CompilerMSL::prepare_access_chain_for_scalar_access(std::string &expr, cons
+ 	// For packed types, we could technically omit this if we know the reference does not have to turn into a pointer
+ 	// of some kind, but that requires external analysis passes to figure out, and
+ 	// this case is likely rare enough that we don't need to bother.
+-	if (storage == StorageClassStorageBuffer || storage == StorageClassWorkgroup)
++	if (storage == StorageClassStorageBuffer || storage == StorageClassWorkgroup ||
++	    storage == StorageClassPhysicalStorageBuffer)
+ 	{
+ 		const char *addr_space = storage == StorageClassWorkgroup ? "threadgroup" : "device";
+ 		expr = join("((", addr_space, " ", type_to_glsl(type), "*)&", enclose_expression(expr), ")");
+@@ -19984,16 +19985,24 @@ void CompilerMSL::emit_argument_buffer_aliased_descriptor(const SPIRVariable &al
+ 		bool needs_post_cast_deref = !is_array(data_type);
+ 		string ref_type = needs_post_cast_deref ? "&" : join("(&)", type_to_array_glsl(var_type, aliased_var.self));
+ 
++		// The descriptor-buffer lvalue we cast from carries a __restrict qualifier
++		// (mirrored from the base descriptor variable). Newer Metal online compilers
++		// reject a reinterpret_cast whose target type omits that qualifier with a hard
++		// "casts away qualifiers" error. Carry the same __restrict onto the target so
++		// the qualifier sets match and only the (aliased) struct type differs.
++		const char *alias_restrict = to_restrict(base_var.self, false);
+ 		if (is_var_runtime_size_array(aliased_var))
+ 		{
+ 			name = join("reinterpret_cast<",
+-			            type_to_glsl(var_type, aliased_var.self, true), " ", descriptor_storage, " *>(&",
++			            type_to_glsl(var_type, aliased_var.self, true), " ", alias_restrict, " ",
++			            descriptor_storage, " *>(&",
+ 			            unqualified_name, ")");
+ 		}
+ 		else
+ 		{
+ 			name = join(needs_post_cast_deref ? "*" : "", "reinterpret_cast<",
+-			            type_to_glsl(var_type, aliased_var.self, true), " ", descriptor_storage, " ",
++			            type_to_glsl(var_type, aliased_var.self, true), " ", alias_restrict, " ",
++			            descriptor_storage, " ",
+ 			            ref_type,
+ 			            ">(", unqualified_name, ");");
+ 		}
