@@ -331,32 +331,8 @@ struct BottleDetailView: View {
         Group {
             if !games.isEmpty {
                 GroupBox {
-                    VStack(spacing: 8) {
-                        ForEach(games) { game in
-                            Button {
-                                bottleManager.launch(exe: game.unixPath, in: bottle)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "gamecontroller.fill")
-                                        .font(.title2).foregroundStyle(.white)
-                                        .frame(width: 40, height: 40)
-                                        .background(LinearGradient(colors: [.teal, .indigo],
-                                                                   startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        .clipShape(RoundedRectangle(cornerRadius: 9))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(game.name).font(.headline).foregroundStyle(.primary)
-                                        Text("Play").font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "play.circle.fill")
-                                        .font(.title).foregroundStyle(.teal)
-                                }
-                                .padding(6)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isBusy)
-                        }
+                    GameLauncherGrid(games: games, disabled: isBusy) { game in
+                        bottleManager.launch(exe: game.unixPath, in: bottle)
                     }
                     .padding(6)
                 } label: { Label("Games", systemImage: "gamecontroller") }
