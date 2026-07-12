@@ -53,12 +53,26 @@ final class EngineManager: ObservableObject {
         let cx = URL(fileURLWithPath: "/Applications/CrossOver.app/Contents/SharedSupport/CrossOver")
         let loader = cx.appendingPathComponent("bin/wineloader")
         guard FileManager.default.isExecutableFile(atPath: loader.path) else { return nil }
-        let env = [
+        var env = [
             "WINELOADER": loader.path,
             "WINESERVER": cx.appendingPathComponent("bin/wineserver").path,
-            "WINEDLLPATH": "\(cx.path)/lib/wine:\(cx.path)/lib64/wine",
+            // Match CrossOver's own DLL search order: PE builtins (x86_64/i386-windows)
+            // ahead of the plain lib/wine dir. The PE ntdll here is built with the
+            // toolchain (GCC 13.2.0) whose codegen Rosetta translates correctly — a
+            // newer GCC mistranslates it and anti-tamper VMs (ARXAN) recurse forever.
+            "WINEDLLPATH": "\(cx.path)/lib/wine/x86_64-windows:\(cx.path)/lib/wine/i386-windows:\(cx.path)/lib/wine",
             "DYLD_FALLBACK_LIBRARY_PATH": "\(cx.path)/lib:\(cx.path)/lib64",
+            // CX_ROOT lets CrossOver's Wine locate its GPTK / support libs. Required
+            // for anti-tamper (ARXAN) titles to pass their Rosetta self-modifying-code
+            // checks — without it they hit an infinite recursion / stack overflow.
+            "CX_ROOT": cx.path,
         ]
+        // libd3dshared is loaded regardless of the graphics backend and is part of what
+        // lets those anti-tamper titles run under Rosetta. Only set it if present.
+        let libd3d = cx.appendingPathComponent("lib64/apple_gptk/external/libd3dshared.dylib")
+        if FileManager.default.fileExists(atPath: libd3d.path) {
+            env["CX_APPLEGPTK_LIBD3DSHARED_PATH"] = libd3d.path
+        }
         return Engine(id: "crossover", name: "CrossOver (installed)",
                       wineBin: loader, kind: .crossover, extraEnv: env)
     }

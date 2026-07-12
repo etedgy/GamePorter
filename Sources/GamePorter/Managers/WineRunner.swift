@@ -25,6 +25,10 @@ struct WineRunner {
         if bottle.esync { env["WINEESYNC"] = "1" }
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
+        // Disable Rosetta's W^X enforcement so self-modifying / JIT code (as used by
+        // anti-tamper protections like ARXAN) is translated correctly. Matches
+        // CrossOver's default ("Fix for apps under Rosetta"); harmless otherwise.
+        env["DOTNET_EnableWriteXorExecute"] = "0"
         // Engine-specific loader paths (e.g. CrossOver's wineloader/libs).
         for (k, v) in engine.extraEnv { env[k] = v }
 
@@ -43,6 +47,15 @@ struct WineRunner {
                 // that bind several sampler types to one register — without it those games
                 // fail pipeline compilation ("undeclared identifier s0_*Smplr") = blank screen.
                 env["DXVK_CONFIG_FILE"] = bottle.url.appendingPathComponent("dxvk.conf").path
+            }
+            if r == .vkd3d {
+                // Our VKD3D-Proton (DX12 → Vulkan) runs on the engine's MoltenVK. Metal
+                // argument buffers are required for VKD3D's descriptor indexing / null
+                // descriptors; point the loader at this engine's (patched) libMoltenVK.
+                env["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1"
+                let libDir = engine.wineRoot.appendingPathComponent("lib").path
+                let existing = env["DYLD_FALLBACK_LIBRARY_PATH"]
+                env["DYLD_FALLBACK_LIBRARY_PATH"] = existing.map { "\(libDir):\($0)" } ?? "\(libDir):/usr/lib"
             }
 
             // Global settings: FPS cap + FPS overlay, applied to every game.
