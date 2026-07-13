@@ -224,7 +224,7 @@ struct WineRunner {
             let lower = name.lowercased()
             // Built-in runtime components, not user apps
             if lower.contains("wine gecko") || lower.contains("wine mono")
-                || lower.contains("crossover html engine") { return }
+                || lower.contains("html engine") { return }
             apps[key] = InstalledApp(
                 key: key, name: name,
                 version: fields["DisplayVersion"],
