@@ -46,6 +46,9 @@ gh release create engine-gpwine-1.0 build/releases/gpwine-1.0.tar.gz \
 ```
 
 The tag/filename must match `EngineCatalogEntry("gpwine")` in `Sources/GamePorter/Models/Engine.swift`.
+
+**Mark engine releases as pre-release** (`gh release edit <tag> --prerelease`) so they never become
+"latest" — the Sparkle feed lives on the newest *app* release (`releases/latest/download/appcast.xml`).
 If you rebuild the engine, bump both the tag and that catalog entry (id/url/sizeMB).
 
 ## Apple Game Porting Toolkit (auto-installed)

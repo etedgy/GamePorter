@@ -29,13 +29,21 @@ mkdir -p "$REL"
 ./build.sh
 
 # Zip the app for distribution (ditto preserves symlinks/frameworks/signatures).
-ZIP="$REL/GamePorter-$VER.zip"
-rm -f "$ZIP"
+# generate_appcast only understands .app archives, so build the appcast in an isolated dir
+# that holds just this zip (not the DMG or the engine tarball).
+ACSRC="$REL/.appcast-src"
+rm -rf "$ACSRC"; mkdir -p "$ACSRC"
+ZIP="$ACSRC/GamePorter-$VER.zip"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent build/GamePorter.app "$ZIP"
 
-# Regenerate the appcast from every zip in the releases dir. generate_appcast signs each
-# with the private key from the Keychain and writes appcast.xml with the EdDSA signatures.
-"$BIN/generate_appcast" "$REL"
+# Sign + write appcast.xml. Enclosure URLs use GitHub's stable latest-download path so the
+# same feed URL always points at the newest release's asset.
+"$BIN/generate_appcast" \
+    --download-url-prefix "https://github.com/etedgy/GamePorter/releases/latest/download/" \
+    "$ACSRC"
+mv "$ACSRC/GamePorter-$VER.zip" "$REL/GamePorter-$VER.zip"
+mv "$ACSRC/appcast.xml" "$REL/appcast.xml"
+rm -rf "$ACSRC"
 
 echo ""
 echo "Release $VER built:"
