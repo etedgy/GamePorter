@@ -34,7 +34,7 @@ enum RendererStager {
                 id: "dxmt-0.80",
                 url: URL(string: "https://github.com/3Shain/dxmt/releases/download/v0.80/dxmt-v0.80-builtin.tar.gz")!,
                 dlls: ["d3d10core", "d3d11", "dxgi", "winemetal"])
-        case .d3dmetal, .wined3d:
+        case .d3dmetal, .wined3d, .builtin:
             return nil
         }
     }
@@ -56,6 +56,12 @@ enum RendererStager {
             return "dxgi,d3d12,d3d12core=n"   // VKD3D-Proton + DXVK's dxgi (DX12 → Vulkan)
         case .dxmt:
             return "d3d10core,d3d11,dxgi,winemetal=n"
+        case .builtin:
+            // Force d3d12/dxgi to this engine's builtin, which for the self-built engine
+            // is Apple's D3DMetal (DX12 → Metal directly). some games ship their own d3d12.dll, so
+            // it must be overridden to builtin. Wine's own VKD3D→MoltenVK mistranslates
+            // some 3D scenes; D3DMetal renders them correctly.
+            return "d3d12,d3d12core,dxgi=b"
         }
     }
 

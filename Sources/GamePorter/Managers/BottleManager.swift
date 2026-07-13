@@ -224,7 +224,7 @@ final class BottleManager: ObservableObject {
         runner(for: bottle)?.discoverPrograms(bottle: bottle) ?? []
     }
 
-    /// Installed games, from Desktop/Start Menu shortcuts (CrossOver-style launchers).
+    /// Installed games, from Desktop/Start Menu shortcuts.
     func discoverGames(in bottle: Bottle) -> [DiscoveredProgram] {
         runner(for: bottle)?.discoverGames(bottle: bottle) ?? []
     }

@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import CryptoKit
 
-/// Extracts a Windows program's real icon (like CrossOver's launcher does) by
+/// Extracts a Windows program's real icon by
 /// reading the RT_GROUP_ICON / RT_ICON resources straight out of the PE (.exe),
 /// reconstructing a .ico, and letting AppKit rasterise it. Results are cached on
 /// disk as PNG so the launcher grid stays snappy.

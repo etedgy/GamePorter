@@ -7,6 +7,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
     case dxvk       // DX9/10/11 → Vulkan via MoltenVK
     case vkd3d      // DX12 → Vulkan via MoltenVK (our patched VKD3D-Proton + MoltenVK)
     case wined3d    // DX → OpenGL, Wine's built-in (max compatibility, slower)
+    case builtin    // Wine's own DLLs untouched: d3d12 → Wine's built-in VKD3D → Vulkan → MoltenVK
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         case .dxvk:     return "DXVK — DirectX 9/10/11 → Vulkan (Metal)"
         case .vkd3d:    return "VKD3D — DirectX 12 → Vulkan (Metal)"
         case .wined3d:  return "WineD3D — DirectX → OpenGL (compatibility)"
+        case .builtin:  return "Built-in — DirectX 12 → Metal (Apple D3DMetal)"
         }
     }
 
@@ -27,6 +29,7 @@ enum RendererKind: String, Codable, CaseIterable, Identifiable {
         case .dxvk:     return "DX9–11 → Metal via our patched DXVK. Best for older games; full shaders."
         case .vkd3d:    return "DX12 → Metal via our patched VKD3D-Proton + MoltenVK. For modern DX12 games (needs the WhiskyWine engine)."
         case .wined3d:  return "Universal fallback when nothing else renders."
+        case .builtin:  return "DirectX 12 → Metal via Apple's D3DMetal — correct, fast 3D for modern DX12 games. The recommended path on the self-built engine."
         }
     }
 }
@@ -37,9 +40,9 @@ struct Engine: Identifiable, Hashable {
     let name: String          // display name
     let wineBin: URL          // path to the wine loader ("wine", "wine64", or "wineloader")
     let kind: Kind
-    var extraEnv: [String: String] = [:]   // engine-specific env (CrossOver loader paths)
+    var extraEnv: [String: String] = [:]   // engine-specific env (loader paths, etc.)
 
-    enum Kind: String { case gptk, vanilla, crossover }
+    enum Kind: String { case gptk, vanilla, gpwine }
 
     var wineserver: URL { wineBin.deletingLastPathComponent().appendingPathComponent("wineserver") }
     /// …/Resources/wine — lib/external holds D3DMetal on GPTK builds.
@@ -50,17 +53,23 @@ struct Engine: Identifiable, Hashable {
         switch kind {
         case .gptk:      return [.d3dmetal, .dxvk, .wined3d]   // old Wine, has Apple D3DMetal
         case .vanilla:   return [.vkd3d, .dxmt, .dxvk, .wined3d]  // Wine 11 + our MoltenVK: DX12 via VKD3D, plus DXMT/DXVK
-        case .crossover: return [.d3dmetal, .dxvk, .wined3d]   // your CrossOver: D3DMetal + proper 32-bit
+        case .gpwine:    return [.builtin, .vkd3d, .dxvk, .wined3d]  // self-built Wine 11: D3DMetal (builtin) + MoltenVK
         }
     }
 
-    var defaultRenderer: RendererKind { kind == .vanilla ? .dxmt : .d3dmetal }
+    var defaultRenderer: RendererKind {
+        switch kind {
+        case .vanilla: return .dxmt
+        case .gpwine:  return .builtin   // D3DMetal — the recommended DX12 path
+        default:       return .d3dmetal
+        }
+    }
 
     var versionNote: String {
         switch kind {
         case .gptk:      return "older Wine, Apple D3DMetal"
         case .vanilla:   return "modern Wine, best installer compatibility"
-        case .crossover: return "your installed CrossOver — installs stubborn 32-bit games"
+        case .gpwine:    return "self-built Wine 11 — Metal rendering, runs the widest range of games"
         }
     }
 }
@@ -75,6 +84,13 @@ struct EngineCatalogEntry: Identifiable, Hashable {
     let summary: String
 
     static let all: [EngineCatalogEntry] = [
+        EngineCatalogEntry(
+            id: "gpwine",
+            name: "GamePorter Wine (self-built)",
+            kind: .gpwine,
+            url: URL(string: "https://github.com/etedgy/GamePorter/releases/download/engine-gpwine-1.0/gpwine-1.0.tar.gz")!,
+            sizeMB: 465,
+            summary: "Our own from-source Wine 11 (wow64) with Apple D3DMetal rendering (auto-installed) and fast-sync online login. Runs the widest range of modern DX12 games."),
         EngineCatalogEntry(
             id: "wine-staging-11.10",
             name: "Wine Staging 11.10",
