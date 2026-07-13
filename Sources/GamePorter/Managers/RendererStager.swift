@@ -58,9 +58,9 @@ enum RendererStager {
             return "d3d10core,d3d11,dxgi,winemetal=n"
         case .builtin:
             // Force d3d12/dxgi to this engine's builtin, which for the self-built engine
-            // is Apple's D3DMetal (DX12 → Metal directly). D2R ships its own d3d12.dll, so
+            // is Apple's D3DMetal (DX12 → Metal directly). some games ship their own d3d12.dll, so
             // it must be overridden to builtin. Wine's own VKD3D→MoltenVK mistranslates
-            // D2R's 3D scene (grid/streak glitch); D3DMetal renders it correctly.
+            // some 3D scenes; D3DMetal renders them correctly.
             return "d3d12,d3d12core,dxgi=b"
         }
     }

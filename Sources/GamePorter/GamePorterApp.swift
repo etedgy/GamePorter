@@ -24,7 +24,7 @@ struct GamePorterApp: App {
 
     /// Raise this process's open-file limit so wine children inherit it.
     /// Apps launched from Finder get a low soft limit (256); big games and
-    /// their installers open thousands of handles. CrossOver does the same.
+    /// their installers open thousands of handles.
     static func raiseResourceLimits() {
         var lim = rlimit()
         guard getrlimit(RLIMIT_NOFILE, &lim) == 0 else { return }

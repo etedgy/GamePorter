@@ -25,13 +25,9 @@ final class EngineManager: ObservableObject {
                                 wineBin: bin, kind: .gptk))
         }
 
-        // Our own from-source Wine build (from CrossOver's LGPL source), if present.
-        // Runs anti-tamper DX12 games (D2R) on our own binaries + free MoltenVK.
+        // Our own from-source Wine build, if present. Renders demanding DX12 games on
+        // our own binaries + free MoltenVK / Apple D3DMetal.
         if let gp = Self.detectGamePorterWine() { found.append(gp) }
-
-        // The user's installed CrossOver, if present — its wineloader has proper
-        // 32-bit support that installs 32-bit InnoSetup installers vanilla Wine can't.
-        if let cx = Self.detectCrossOver() { found.append(cx) }
 
         // Everything else lives under Engines/<id>/.
         if let dirs = try? FileManager.default.contentsOfDirectory(
@@ -54,7 +50,7 @@ final class EngineManager: ObservableObject {
 
         // The self-built engine renders DX12 games best via Apple's D3DMetal, which comes
         // from the (free) Game Porting Toolkit. If that engine is present but GPTK isn't,
-        // pull GPTK automatically so D2R and friends render correctly out of the box.
+        // pull GPTK automatically so games render correctly out of the box.
         if found.contains(where: { $0.kind == .gpwine }) { ensureAppleGPTK() }
     }
 
@@ -70,18 +66,15 @@ final class EngineManager: ObservableObject {
         install(entry)
     }
 
-    /// Our own from-source Wine build under ~/wine-build/inst (built from CrossOver's
-    /// published LGPL source: wow64, our loader + ntdll.so + PE dlls, minos 27). Renders
-    /// anti-tamper DX12 games (D2R) on our own binaries — with NO CrossOver files at
-    /// runtime. Three free libraries live self-contained in its lib/wine/x86_64-unix dir:
+    /// Our own from-source Wine 11 build under ~/wine-build/inst (wow64: our loader +
+    /// ntdll.so + PE dlls). Renders demanding DX12 games on our own binaries. Three free
+    /// libraries live self-contained in its lib/wine/x86_64-unix dir:
     ///   • libMoltenVK.dylib  — Gcenx build (Apache-2.0), the Vulkan→Metal driver
-    ///   • libgnutls.30 + libgmp.10 — LGPL, gives schannel/TLS (Battle.net HTTPS)
-    ///   • libd3dshared.dylib — Apple's Game Porting Toolkit (free Apple download)
+    ///   • libgnutls.30 + libgmp.10 — LGPL, gives schannel/TLS for HTTPS
     ///
-    /// D3DMetal (for perfect DX12 rendering, e.g. D2R's 3D) is staged in from the user's
-    /// own installed Game Porting Toolkit — a free Apple download, never redistributed by
-    /// us. Without it the engine still runs games via its own free VKD3D→MoltenVK path.
-    /// Nothing from CrossOver is used.
+    /// D3DMetal (for correct, fast DX12 rendering) is staged in from the user's own
+    /// installed Game Porting Toolkit — a free Apple download, never redistributed by us.
+    /// Without it the engine still runs games via its own free VKD3D→MoltenVK path.
     nonisolated static func detectGamePorterWine() -> Engine? {
         // Prefer the installed engine (downloaded into Engines/gpwine); fall back to the
         // local build tree (~/wine-build/inst) for development.
@@ -106,11 +99,11 @@ final class EngineManager: ObservableObject {
             "ROSETTA_ADVERTISE_AVX": "1",
             // macOS fast synchronization (Mach semaphores). Without it Wine falls back
             // to slow server-based sync, and under Rosetta the async I/O completions lag
-            // enough that online-login/agreement checks (e.g. D2R's Battle.net check)
+            // enough that online-login/agreement checks (e.g. an online-login check)
             // time out and wrongly report "offline".
             "WINEMSYNC": "1",
         ]
-        // Apple-GPTK libd3dshared clears ARXAN's Rosetta storm + backs D3DMetal. Point at
+        // Apple-GPTK libd3dshared backs D3DMetal. Point at
         // our staged copy if present (from the user's Game Porting Toolkit); otherwise the
         // engine still runs games via its own free VKD3D→MoltenVK path.
         let libd3d = unixLib.appendingPathComponent("libd3dshared.dylib")
@@ -122,7 +115,7 @@ final class EngineManager: ObservableObject {
     }
 
     /// Copy Apple's D3DMetal (d3d12/dxgi glue + libd3dshared + D3DMetal.framework) from the
-    /// installed Game Porting Toolkit into the engine tree, so DX12 games (e.g. D2R) render
+    /// installed Game Porting Toolkit into the engine tree, so DX12 games render
     /// via Metal instead of the VKD3D→MoltenVK path (which mistranslates some 3D scenes).
     /// Idempotent; a no-op if GPTK isn't installed or D3DMetal is already staged.
     nonisolated static func stageD3DMetal(into engineRoot: URL) {
@@ -171,35 +164,6 @@ final class EngineManager: ObservableObject {
         return nil
     }
 
-    /// Build an Engine from the user's installed CrossOver (drives its wineloader
-    /// binary directly with GamePorter's own prefixes).
-    nonisolated static func detectCrossOver() -> Engine? {
-        let cx = URL(fileURLWithPath: "/Applications/CrossOver.app/Contents/SharedSupport/CrossOver")
-        let loader = cx.appendingPathComponent("bin/wineloader")
-        guard FileManager.default.isExecutableFile(atPath: loader.path) else { return nil }
-        var env = [
-            "WINELOADER": loader.path,
-            "WINESERVER": cx.appendingPathComponent("bin/wineserver").path,
-            // Match CrossOver's own DLL search order: PE builtins (x86_64/i386-windows)
-            // ahead of the plain lib/wine dir. The PE ntdll here is built with the
-            // toolchain (GCC 13.2.0) whose codegen Rosetta translates correctly — a
-            // newer GCC mistranslates it and anti-tamper VMs (ARXAN) recurse forever.
-            "WINEDLLPATH": "\(cx.path)/lib/wine/x86_64-windows:\(cx.path)/lib/wine/i386-windows:\(cx.path)/lib/wine",
-            "DYLD_FALLBACK_LIBRARY_PATH": "\(cx.path)/lib:\(cx.path)/lib64",
-            // CX_ROOT lets CrossOver's Wine locate its GPTK / support libs. Required
-            // for anti-tamper (ARXAN) titles to pass their Rosetta self-modifying-code
-            // checks — without it they hit an infinite recursion / stack overflow.
-            "CX_ROOT": cx.path,
-        ]
-        // libd3dshared is loaded regardless of the graphics backend and is part of what
-        // lets those anti-tamper titles run under Rosetta. Only set it if present.
-        let libd3d = cx.appendingPathComponent("lib64/apple_gptk/external/libd3dshared.dylib")
-        if FileManager.default.fileExists(atPath: libd3d.path) {
-            env["CX_APPLEGPTK_LIBD3DSHARED_PATH"] = libd3d.path
-        }
-        return Engine(id: "crossover", name: "CrossOver (installed)",
-                      wineBin: loader, kind: .crossover, extraEnv: env)
-    }
 
     /// Locate the wine loader under a tree: newer Wine ships "wine", GPTK ships "wine64".
     nonisolated static func findLoader(under root: URL) -> URL? {

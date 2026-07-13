@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// CrossOver-style launcher: installed games as a grid of tiles, each with the
+/// Game launcher: installed games as a grid of tiles, each with the
 /// real icon pulled from its .exe and its name. Click a tile to play.
 struct GameLauncherGrid: View {
     let games: [DiscoveredProgram]

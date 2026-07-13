@@ -5,7 +5,7 @@ struct SetupView: View {
     @EnvironmentObject var engines: EngineManager
 
     var recommended: EngineCatalogEntry {
-        // The self-built engine runs the widest range (incl. anti-tamper DX12 titles).
+        // The self-built engine runs the widest range (incl. demanding DX12 titles).
         EngineCatalogEntry.all.first { $0.kind == .gpwine }
             ?? EngineCatalogEntry.all.first { $0.kind == .vanilla }
             ?? EngineCatalogEntry.all[0]

@@ -19,17 +19,15 @@ struct WineRunner {
         var env = ProcessInfo.processInfo.environment
         env["WINEPREFIX"] = bottle.url.path
         env["WINEDEBUG"] = "fixme-all"
-        // CrossOver-style defaults for big games: let 32-bit processes use the
-        // full 4GB address space instead of 2GB (matches CrossOver/Whisky).
+        // Defaults for big games: let 32-bit processes use the
+        // full 4GB address space instead of 2GB (matches common Wine setups).
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"
         if bottle.esync { env["WINEESYNC"] = "1" }
         if bottle.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
         if bottle.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
-        // Disable Rosetta's W^X enforcement so self-modifying / JIT code (as used by
-        // anti-tamper protections like ARXAN) is translated correctly. Matches
-        // CrossOver's default ("Fix for apps under Rosetta"); harmless otherwise.
+        // Disable Rosetta's W^X enforcement so self-modifying / JIT code (is translated correctly. Harmless otherwise.
         env["DOTNET_EnableWriteXorExecute"] = "0"
-        // Engine-specific loader paths (e.g. CrossOver's wineloader/libs).
+        // Engine-specific loader paths.
         for (k, v) in engine.extraEnv { env[k] = v }
 
         if !plainGraphics {
@@ -278,7 +276,7 @@ struct WineRunner {
     }
 
     /// Games installed in this bottle, read from Desktop / Start Menu .lnk shortcuts —
-    /// the same source CrossOver uses to build its launchers. Targeted and fast.
+    /// the same source used to build launchers. Targeted and fast.
     func discoverGames(bottle: Bottle) -> [DiscoveredProgram] {
         let fm = FileManager.default
         var out: [String: DiscoveredProgram] = [:]
