@@ -122,7 +122,11 @@ final class EngineManager: ObservableObject {
         let fm = FileManager.default
         let unix = engineRoot.appendingPathComponent("lib/wine/x86_64-unix")
         let win  = engineRoot.appendingPathComponent("lib/wine/x86_64-windows")
-        if fm.fileExists(atPath: unix.appendingPathComponent("D3DMetal.framework").path) { return }
+        // Already fully staged? Require BOTH the framework and a valid d3d12.so symlink —
+        // a partial stage (framework present, symlink broken) must re-stage, not skip.
+        let d3d12so = unix.appendingPathComponent("d3d12.so").path
+        if fm.fileExists(atPath: unix.appendingPathComponent("D3DMetal.framework").path),
+           (try? fm.destinationOfSymbolicLink(atPath: d3d12so)) == "libd3dshared.dylib" { return }
         guard let src = gptkD3DMetalSource() else { return }
         // D3DMetalDLLsBase glue (the API surface) — Apple-built, wired to Wine via winemac.drv.
         for dll in ["d3d12.dll", "dxgi.dll"] {
