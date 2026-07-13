@@ -137,12 +137,12 @@ final class EngineManager: ObservableObject {
             try? fm.removeItem(at: dst)
             try? fm.copyItem(at: src.ext.appendingPathComponent(name), to: dst)
         }
-        // d3d12.so / dxgi.so are the unix half of the glue — a symlink to libd3dshared.
+        // d3d12.so / dxgi.so are the unix half of the glue — a RELATIVE same-dir symlink to
+        // libd3dshared (URL(fileURLWithPath:) would make it absolute-to-cwd and break).
         for so in ["d3d12.so", "dxgi.so"] {
             let link = unix.appendingPathComponent(so)
             try? fm.removeItem(at: link)
-            try? fm.createSymbolicLink(at: link,
-                withDestinationURL: URL(fileURLWithPath: "libd3dshared.dylib"))
+            try? fm.createSymbolicLink(atPath: link.path, withDestinationPath: "libd3dshared.dylib")
         }
     }
 
