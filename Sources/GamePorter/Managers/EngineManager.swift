@@ -86,6 +86,9 @@ final class EngineManager: ObservableObject {
         let loader = root.appendingPathComponent("bin/wine")
         guard fm.isExecutableFile(atPath: loader.path) else { return nil }
 
+        // Strip the CrossOver bundle identity baked into the loader (Dock icon fix).
+        Self.debrandWineLoader(into: root)
+
         // Stage Apple's D3DMetal into the engine tree from the installed Game Porting
         // Toolkit (never redistributed by us — it's the user's own free Apple download).
         Self.stageD3DMetal(into: root)
@@ -112,6 +115,40 @@ final class EngineManager: ObservableObject {
         }
         return Engine(id: "gpwine", name: "GamePorter Wine (self-built)",
                       wineBin: loader, kind: .gpwine, extraEnv: env)
+    }
+
+    /// Rewrite the CrossOver bundle identity baked into the Wine loader's embedded
+    /// Info.plist. The loader (built from CrossOver's LGPL source) ships a link-time
+    /// CFBundleIdentifier of "com.codeweavers.CrossOver.wineloader"; macOS keys the Dock
+    /// tile off it, so any Wine process (conhost.exe et al.) that briefly opens a window
+    /// paints CrossOver's icon. Rewrite it to a GamePorter id — same byte length, so the
+    /// embedded __info_plist section keeps its size — and ad-hoc re-sign. Idempotent:
+    /// skips a loader that's already de-branded.
+    nonisolated static func debrandWineLoader(into engineRoot: URL) {
+        let fm = FileManager.default
+        let loaders = [engineRoot.appendingPathComponent("bin/wine"),
+                       engineRoot.appendingPathComponent("lib/wine/x86_64-unix/wine")]
+        // Lengths match exactly (36==36, 28==28) so the Mach-O section is untouched.
+        let subs: [(Data, Data)] = [
+            (Data("com.codeweavers.CrossOver.wineloader".utf8), Data("com.yan.gameporter.gpwine.wineloader".utf8)),
+            (Data("CrossOver-Hosted Application".utf8),         Data("GamePorter Windows App      ".utf8)),
+        ]
+        for loader in loaders {
+            guard fm.isExecutableFile(atPath: loader.path),
+                  var data = try? Data(contentsOf: loader),
+                  data.range(of: subs[0].0) != nil else { continue }   // absent → already de-branded
+            for (from, to) in subs {
+                while let r = data.range(of: from) { data.replaceSubrange(r, with: to) }
+            }
+            guard (try? data.write(to: loader)) != nil else { continue }
+            // Ad-hoc re-sign (these binaries carry no entitlements — ad-hoc is correct here).
+            let cs = Process()
+            cs.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            cs.arguments = ["-f", "-s", "-", loader.path]
+            cs.standardOutput = FileHandle.nullDevice
+            cs.standardError = FileHandle.nullDevice
+            try? cs.run(); cs.waitUntilExit()
+        }
     }
 
     /// Copy Apple's D3DMetal (d3d12/dxgi glue + libd3dshared + D3DMetal.framework) from the
