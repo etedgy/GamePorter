@@ -30,10 +30,16 @@ struct WineRunner {
         // Engine-specific loader paths.
         for (k, v) in engine.extraEnv { env[k] = v }
 
+        // Never let Wine register macOS menu entries / file associations — GamePorter
+        // manages its own launchers. This also stops the brief winemenubuilder.exe
+        // process (a leftover RunServices entry in CrossOver-migrated prefixes) from
+        // flashing in the Dock on launch. Applies even in plainGraphics (wineboot).
+        env["WINEDLLOVERRIDES"] = "winemenubuilder.exe="
+
         if !plainGraphics {
             // Graphics translation layer via DLL overrides.
             let r = renderer(for: bottle)
-            env["WINEDLLOVERRIDES"] = RendererStager.dllOverrides(for: r)
+            env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=;" + RendererStager.dllOverrides(for: r)
             if r == .dxmt, let unixDir = RendererStager.unixLibDir(for: .dxmt) {
                 // DXMT's winemetal.so is a Wine unix library; point the loader at it.
                 env["WINEDLLPATH"] = unixDir.path
