@@ -2,3 +2,7 @@
 memory/
 .build/
 .DS_Store
+
+# Build artifacts — distributed via GitHub Releases, not tracked
+build/
+Package.resolved.bak

@@ -1,10 +1,16 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct GamePorterApp: App {
     @StateObject private var engines: EngineManager
     @StateObject private var bottleManager: BottleManager
     @StateObject private var settingsManager: SettingsManager
+
+    /// Sparkle auto-updater. Starts on launch, checks the appcast (see Info.plist SUFeedURL),
+    /// and offers/installs new versions. `startingUpdater: true` enables background checks.
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     init() {
         Self.raiseResourceLimits()
@@ -40,5 +46,24 @@ struct GamePorterApp: App {
                 .frame(minWidth: 820, minHeight: 520)
         }
         .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
+        }
+    }
+}
+
+/// A "Check for Updates…" menu item, enabled only when Sparkle can currently check.
+struct CheckForUpdatesView: View {
+    private let updater: SPUUpdater
+    @State private var canCheck = false
+
+    init(updater: SPUUpdater) { self.updater = updater }
+
+    var body: some View {
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!canCheck)
+            .onReceive(updater.publisher(for: \.canCheckForUpdates)) { canCheck = $0 }
     }
 }

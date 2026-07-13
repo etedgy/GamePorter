@@ -26,5 +26,17 @@
     <string>Personal use build.</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.games</string>
+
+    <!-- Sparkle auto-update. SUFeedURL points at the appcast; SUPublicEDKey is the
+         EdDSA public key that verifies update signatures. Generate the keypair with
+         Sparkle's `generate_keys` (see scripts/release.sh) and paste the public key here. -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/etedgy/GamePorter/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>rPF6nYZZ6JDI4uOfi90Y8ITOBSguDgPKZPv/8vfStG8=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>
