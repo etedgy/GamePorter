@@ -5,8 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Ensure the app is built.
-[ -d build/GamePorter.app ] || ./build.sh
+# Always (re)build so the DMG never packages a stale app bundle.
+./build.sh
 VER="${1:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)}"
 
 OUT="build/releases"; mkdir -p "$OUT"
