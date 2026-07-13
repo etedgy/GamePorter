@@ -137,8 +137,22 @@ struct WineRunner {
         try run(["wineboot", "-i"], bottle: bottle, wait: true, plainGraphics: true)
         try run(["winecfg", "-v", bottle.windowsVersion], bottle: bottle, wait: true, plainGraphics: true)
         try configureDrives(bottle: bottle)
+        try disableCrashDebugger(bottle: bottle)
         if bottle.retinaMode {
             try setRetina(bottle: bottle, enabled: true)
+        }
+    }
+
+    /// Turn off Wine's auto-debugger (AeDebug\Auto). Wine defaults it on, which spawns a
+    /// winedbg + conhost on *every* crash. Apps that deliberately raise-and-catch exceptions
+    /// (Battle.net throws a division-by-zero it handles itself) get their exception hijacked
+    /// into the debugger, and a crashing helper with a watchdog multiplies that into a
+    /// process storm. GamePorter manages crashes itself, so keep the auto-debugger off.
+    func disableCrashDebugger(bottle: Bottle) throws {
+        for hive in [#"HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
+                     #"HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug"#] {
+            try? run(["reg", "add", hive, "/v", "Auto", "/t", "REG_SZ", "/d", "0", "/f"],
+                     bottle: bottle, wait: true, plainGraphics: true)
         }
     }
 
@@ -159,6 +173,7 @@ struct WineRunner {
     func updatePrefix(bottle: Bottle) throws {
         try run(["wineboot", "-u"], bottle: bottle, wait: true, plainGraphics: true)
         try? configureDrives(bottle: bottle)
+        try? disableCrashDebugger(bottle: bottle)
     }
 
     func setRetina(bottle: Bottle, enabled: Bool) throws {
